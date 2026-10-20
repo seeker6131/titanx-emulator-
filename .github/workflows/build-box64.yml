@@ -50,23 +50,31 @@ jobs:
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
 
-      - name: Install Dependencies
+      - name: Install Build Dependencies
+        shell: bash
         run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y git cmake ninja-build \
-            make file binutils gcc python3
+          sudo apt-get install -y \
+            git cmake ninja-build make \
+            file binutils gcc python3 unzip
 
       - name: Fetch Official Box64
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/ptitSeb/box64.git box64-source
-          git -C box64-source rev-parse HEAD > box64-commit.txt
+          git clone --depth 1 \
+            https://github.com/ptitSeb/box64.git \
+            box64-source
+
+          git -C box64-source rev-parse HEAD \
+            > box64-commit.txt
 
       - name: Configure Box64
         shell: bash
         run: |
           set -euo pipefail
+
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
 
           cmake \
@@ -85,53 +93,110 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake --build box64-build --target box64 --parallel 2
+          cmake --build box64-build \
+            --target box64 --parallel 2
+
           test -s box64-build/box64
 
-      - name: Create X86-64 CPU Test
+      - name: Create Dynamic PIE X86-64 Test
         shell: bash
         run: |
           set -euo pipefail
 
           mkdir -p test-program
 
-          cat > test-program/test.c <<'EOF'
-          #include <stdio.h>
-          #include <stdint.h>
+          cat > test-program/test.S <<'EOF'
+          .section .rodata
+          message:
+              .ascii "TITANX X86_64 TEST\n"
+              .ascii "RESULT: 1111111110\n"
+              .ascii "CPU TEST PASS\n"
+          message_end:
 
-          int main(void) {
-              volatile uint64_t a = 123456789ULL;
-              volatile uint64_t b = 987654321ULL;
-              uint64_t result = a + b;
+          .section .text
+          .global _start
+          .type _start, @function
 
-              puts("TITANX X86_64 TEST");
-              printf("RESULT: %llu\n",
-                     (unsigned long long)result);
+          _start:
+              mov $123456789, %rax
+              mov $987654321, %rbx
+              add %rbx, %rax
 
-              if (result == 1111111110ULL) {
-                  puts("CPU TEST PASS");
-                  return 0;
-              }
+              cmp $1111111110, %rax
+              jne failed
 
-              puts("CPU TEST FAILED");
-              return 1;
-          }
+              mov $1, %rax
+              mov $1, %rdi
+              lea message(%rip), %rsi
+              mov $(message_end-message), %rdx
+              syscall
+
+              mov $60, %rax
+              xor %rdi, %rdi
+              syscall
+
+          failed:
+              mov $60, %rax
+              mov $1, %rdi
+              syscall
+
+          .section .note.GNU-stack,"",@progbits
           EOF
 
-          gcc -static -O2 -no-pie \
+          gcc \
+            -nostdlib \
+            -fPIE \
+            -pie \
+            -Wl,--no-dynamic-linker \
+            -Wl,-e,_start \
             -o test-program/titanx_x64_test \
-            test-program/test.c
+            test-program/test.S
 
           file test-program/titanx_x64_test
 
           readelf -h test-program/titanx_x64_test \
             | tee x64-test-elf-report.txt
 
+          readelf -l test-program/titanx_x64_test \
+            | tee x64-test-program-headers.txt
+
+          readelf -d test-program/titanx_x64_test \
+            | tee x64-test-dynamic-report.txt
+
           grep -q "Advanced Micro Devices X86-64" \
             x64-test-elf-report.txt
 
-          readelf -l test-program/titanx_x64_test \
-            | tee x64-test-program-headers.txt
+          grep -q "DYN" x64-test-elf-report.txt
+
+          if grep -q "INTERP" \
+            x64-test-program-headers.txt; then
+            echo "ERROR: Unexpected ELF interpreter"
+            exit 1
+          fi
+
+          if grep -q "NEEDED" \
+            x64-test-dynamic-report.txt; then
+            echo "ERROR: Unexpected shared dependency"
+            exit 1
+          fi
+
+          echo "PIE x86-64 test ready"
+
+      - name: Test X86-64 Binary On Build Runner
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          chmod +x test-program/titanx_x64_test
+
+          test-program/titanx_x64_test \
+            | tee x64-host-test.txt
+
+          grep -q "CPU TEST PASS" \
+            x64-host-test.txt
+
+          grep -q "RESULT: 1111111110" \
+            x64-host-test.txt
 
       - name: Package Native Binaries
         shell: bash
@@ -139,15 +204,18 @@ jobs:
           set -euo pipefail
 
           DEST="app/src/main/jniLibs/arm64-v8a"
+
           mkdir -p "$DEST"
 
-          cp box64-build/box64 "$DEST/libbox64.so"
+          cp box64-build/box64 \
+            "$DEST/libbox64.so"
 
           cp test-program/titanx_x64_test \
             "$DEST/libtitanxtest.so"
 
-          chmod 755 "$DEST/libbox64.so"
-          chmod 755 "$DEST/libtitanxtest.so"
+          chmod 755 \
+            "$DEST/libbox64.so" \
+            "$DEST/libtitanxtest.so"
 
           test -s "$DEST/libbox64.so"
           test -s "$DEST/libtitanxtest.so"
@@ -162,10 +230,14 @@ jobs:
             "$DEST/libbox64.so" \
             | tee box64-elf-report.txt
 
-          grep -q AArch64 box64-elf-report.txt
+          grep -q "AArch64" \
+            box64-elf-report.txt
 
           readelf -h "$DEST/libtitanxtest.so" \
-            | grep -q "Advanced Micro Devices X86-64"
+            | tee packaged-test-elf.txt
+
+          grep -q "Advanced Micro Devices X86-64" \
+            packaged-test-elf.txt
 
       - name: Build TitanX APK
         shell: bash
@@ -179,9 +251,11 @@ jobs:
           set -euo pipefail
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
+
           test -s "$APK"
 
-          unzip -l "$APK" | tee apk-contents.txt
+          unzip -l "$APK" \
+            | tee apk-contents.txt
 
           grep -q "lib/arm64-v8a/libbox64.so" \
             apk-contents.txt
@@ -196,17 +270,28 @@ jobs:
             > apk-check/libtitanxtest.so
 
           readelf -h apk-check/libtitanxtest.so \
-            | tee packaged-test-elf.txt
+            | tee final-test-elf.txt
+
+          readelf -l apk-check/libtitanxtest.so \
+            | tee final-test-program-headers.txt
 
           grep -q "Advanced Micro Devices X86-64" \
-            packaged-test-elf.txt
+            final-test-elf.txt
 
-          echo "X86-64 test binary preserved in APK."
+          grep -q "DYN" final-test-elf.txt
+
+          if grep -q "INTERP" \
+            final-test-program-headers.txt; then
+            echo "Unexpected interpreter in APK binary"
+            exit 1
+          fi
+
+          echo "APK binary verification PASS"
 
       - name: Upload TitanX APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-v2.5.2-APK
+          name: TitanX-v2.5.3-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -214,12 +299,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-v2.5.2-Diagnostics
+          name: TitanX-v2.5.3-Diagnostics
           path: |
             box64-commit.txt
             box64-elf-report.txt
             x64-test-elf-report.txt
             x64-test-program-headers.txt
+            x64-test-dynamic-report.txt
+            x64-host-test.txt
             packaged-test-elf.txt
+            final-test-elf.txt
+            final-test-program-headers.txt
             apk-contents.txt
           if-no-files-found: ignore

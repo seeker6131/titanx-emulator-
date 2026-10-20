@@ -349,6 +349,23 @@ public class MainActivity extends Activity {
         }
 
         button(c, "IMPORT RUNTIME ZIP", this::pickZip);
+        
+button(c, "TEST NATIVE ENGINE", () -> {
+    String report = NativeBridge.report();
+
+    log("Native engine test requested");
+
+    new AlertDialog.Builder(this)
+        .setTitle("TitanX Native Engine v0.6")
+        .setMessage(report)
+        .setPositiveButton("OK", null)
+        .setNeutralButton(
+            "COPY",
+            (d, w) -> copy(report)
+        )
+        .show();
+});
+
         button(c, "REMOVE RUNTIME", this::removeRuntime);
 
         LinearLayout v = card();

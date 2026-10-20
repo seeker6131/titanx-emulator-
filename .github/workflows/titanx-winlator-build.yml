@@ -1,3 +1,4 @@
+
 name: TitanX 8GB - Wine Game Engine
 
 on:
@@ -11,158 +12,136 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
-      - name: Install Java 17
+      - name: Checkout TitanX and driver bundle
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Prepare Android build tools
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Android SDK and NDK
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update -qq
-          sudo apt-get install -y ninja-build cmake git python3
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null 2>&1 || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             'platforms;android-35' 'build-tools;35.0.0' \
             'ndk;24.0.8215888' 'cmake;3.22.1'
 
-      - name: Fetch working Wine / Box64 / graphics source
+      - name: Fetch verified Winlator 11.2 source
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/brunodev85/winlator-app.git winlator
+          mkdir winlator
+          git -C winlator init -q
+          git -C winlator remote add origin https://github.com/brunodev85/winlator-app.git
+          git -C winlator fetch --depth 1 origin 8077f374ef2d54127b088de9e8cd7b4af14d9c8b
+          git -C winlator checkout --detach FETCH_HEAD
+          test "$(git -C winlator rev-parse HEAD)" = 8077f374ef2d54127b088de9e8cd7b4af14d9c8b
           test -s winlator/app/src/main/assets/rootfs.tzst
-          test -s winlator/app/src/main/assets/container_pattern.tzst
-          test -s winlator/app/src/main/java/com/winlator/ContainerDetailFragment.java
-          git -C winlator rev-parse HEAD | tee upstream-commit.txt
 
-      - name: Apply TitanX Snapdragon 8 Gen 2 / 8 GB defaults
+      - name: Verify real driver binaries and load TitanX modifications
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import hashlib, json, zipfile
           from pathlib import Path
-          root = Path('winlator')
-          def patch(path, before, after):
-              f = root/path
-              s = f.read_text(encoding='utf-8')
-              n = s.count(before)
-              if n != 1:
-                  raise RuntimeError(f'{path}: expected one match, got {n}: {before[:90]}')
-              f.write_text(s.replace(before, after, 1), encoding='utf-8')
-
-          # Separate app ID, so original Winlator stays installed.
-          patch('app/build.gradle',
-                "applicationId 'com.winlator'",
-                "applicationId 'com.titanx.gameengine'")
-          patch('app/build.gradle',
-                'versionCode 33',
-                'versionCode 340')
-          patch('app/build.gradle',
-                'versionName "11.2"',
-                'versionName "0.1-beta"')
-          patch('app/src/main/res/values/strings.xml',
-                '<string name="app_name">Winlator</string>',
-                '<string name="app_name">TitanX 8GB (Winlator-based)</string>')
-          patch('app/src/main/AndroidManifest.xml',
-                'android:authorities="com.winlator.FileProvider"',
-                'android:authorities="com.titanx.gameengine.FileProvider"')
-
-          for file in (root/'app/src/main/java').rglob('*.java'):
-              s = file.read_text(encoding='utf-8')
-              if 'com.winlator.FileProvider' in s:
-                  file.write_text(
-                      s.replace('com.winlator.FileProvider',
-                                'com.titanx.gameengine.FileProvider'),
-                      encoding='utf-8'
-                  )
-
-          # Defaults for lower-memory Snapdragon hardware.
-          patch('app/src/main/java/com/winlator/container/Container.java',
-                'public static final String DEFAULT_SCREEN_SIZE = "1280x720";',
-                'public static final String DEFAULT_SCREEN_SIZE = "960x540";')
-          patch('app/src/main/java/com/winlator/container/Container.java',
-                'MESA_SHADER_CACHE_MAX_SIZE=512MB',
-                'MESA_SHADER_CACHE_MAX_SIZE=256MB')
-
-          # Add an optional TitanX Box64 preset.
-          patch('app/src/main/java/com/winlator/box64/Box64Preset.java',
-                'public static final String STABILITY = "STABILITY";',
-                'public static final String TITANX_8GB = "TITANX_8GB";\n    public static final String STABILITY = "STABILITY";')
-          patch('app/src/main/java/com/winlator/box64/Box64Preset.java',
-                'public static final String DEFAULT = PERFORMANCE;',
-                'public static final String DEFAULT = TITANX_8GB;')
-
-          manager = 'app/src/main/java/com/winlator/box64/Box64PresetManager.java'
-          patch(manager,
-                'if (id.equals(Box64Preset.STABILITY)) {',
-                '''if (id.equals(Box64Preset.TITANX_8GB)) {
-            envVars.put("BOX64_DYNAREC_SAFEFLAGS", "1");
-            envVars.put("BOX64_DYNAREC_FASTNAN", "1");
-            envVars.put("BOX64_DYNAREC_FASTROUND", "0");
-            envVars.put("BOX64_DYNAREC_X87DOUBLE", "0");
-            envVars.put("BOX64_DYNAREC_BIGBLOCK", "2");
-            envVars.put("BOX64_DYNAREC_STRONGMEM", "1");
-            envVars.put("BOX64_DYNAREC_FORWARD", "128");
-            envVars.put("BOX64_DYNAREC_CALLRET", "0");
-            envVars.put("BOX64_DYNAREC_WAIT", "1");
-            envVars.put("BOX64_DYNAREC_NATIVEFLAGS", "0");
-            envVars.put("BOX64_DYNAREC_WEAKBARRIER", "1");
+          src=Path('TitanX-8G2-Driver-Bundle-v1.zip')
+          if not src.is_file():
+              raise SystemExit('Upload TitanX-8G2-Driver-Bundle-v1.zip into the repository root first')
+          expected={
+              'assets/graphics_driver/turnip-27.0.0-r3-8G2.tzst',
+              'assets/dxwrapper/dxvk-2.4.1-user.tzst',
+              'assets/dxwrapper/dxvk-2.6.9-gplall-test.tzst'
           }
-          else if (id.equals(Box64Preset.STABILITY)) {''')
-          patch(manager,
-                'ArrayList<Box64Preset> presets = new ArrayList<>();',
-                'ArrayList<Box64Preset> presets = new ArrayList<>();\n        presets.add(new Box64Preset(Box64Preset.TITANX_8GB, "TitanX 8GB Balanced"));')
-
-          # Preserve credits and provide matching modified source.
-          (root/'TITANX_CHANGES.txt').write_text('''TitanX 8GB prototype, based on the Winlator 11.2 source.
-          Upstream: https://github.com/brunodev85/winlator-app
-          Changes: distinct application ID, title, initial 960x540 resolution,
-          256MB Mesa shader disk cache limit, optional Box64 TitanX 8GB preset.
-          The original upstream authors and third-party licenses remain credited.
-          This is not a verified performance improvement or a finished emulator.
-          ''', encoding='utf-8')
-          print('TitanX source patches applied successfully')
+          with zipfile.ZipFile(src) as z:
+              info=json.loads(z.read('manifest.json'))
+              if set(info['files'])!=expected: raise RuntimeError('Wrong driver archive inventory')
+              for name in sorted(expected):
+                  binary=z.read(name)
+                  if hashlib.sha256(binary).hexdigest()!=info['files'][name]:
+                      raise RuntimeError('SHA256 mismatch: '+name)
+                  output=Path('winlator/app/src/main')/name
+                  output.parent.mkdir(parents=True,exist_ok=True)
+                  output.write_bytes(binary)
+                  print('OK:',name,len(binary),'bytes')
+              patch=z.read('titanx_patch.py')
+              if hashlib.sha256(patch).hexdigest()!=info['patch_sha256']:
+                  raise RuntimeError('TitanX code integrity check failed')
+              Path('titanx_patch.py').write_bytes(patch)
+              Path('winlator/TITANX_DRIVER_CREDITS.txt').write_bytes(z.read('DRIVER-CREDITS-AND-NOTES.txt'))
           PY
 
-      - name: Build TitanX APK
-        working-directory: winlator
+      - name: Apply real Turnip and DXVK dropdowns plus 8GB tuning
+        run: python3 titanx_patch.py
+
+      - name: Keep stable debug signing key
+        uses: actions/cache@v4
+        with:
+          path: .titanx-signing/debug.keystore
+          key: titanx-engine8gb-debug-key-v1
+
+      - name: Compile TitanX APK
         shell: bash
         run: |
           set -euo pipefail
-          chmod +x gradlew 2>/dev/null || true
-          if [ -f gradlew ]; then
-            ./gradlew --no-daemon --stacktrace assembleDebug
-          else
-            echo 'Missing Gradle wrapper' >&2
-            exit 1
+          mkdir -p .titanx-signing "$HOME/.android"
+          if test -s .titanx-signing/debug.keystore; then
+            cp .titanx-signing/debug.keystore "$HOME/.android/debug.keystore"
           fi
-          test -s app/build/outputs/apk/debug/app-debug.apk
+          cd winlator
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug --no-daemon --stacktrace
+          cd ..
+          if test -s "$HOME/.android/debug.keystore"; then
+            cp "$HOME/.android/debug.keystore" .titanx-signing/debug.keystore
+          fi
 
-      - name: Upload APK
-        if: success()
+      - name: Verify packaged APK and licenses
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=winlator/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -Z1 "$APK" > apk-manifest.txt
+          for file in \
+            assets/rootfs.tzst \
+            assets/graphics_driver/turnip-27.0.0-r3-8G2.tzst \
+            assets/dxwrapper/dxvk-2.4.1-user.tzst \
+            assets/dxwrapper/dxvk-2.6.9-gplall-test.tzst; do
+              grep -Fx "$file" apk-manifest.txt
+          done
+          mkdir -p output
+          cp "$APK" output/TitanX-S23Ultra-8GB-DriverManager.apk
+          cp winlator/LICENSE output/WINLATOR-LICENSE.txt
+          cp winlator/TITANX_DRIVER_CREDITS.txt output/DRIVER-CREDITS.txt
+          sha256sum output/*.apk > output/APK-SHA256.txt
+
+      - name: Publish installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-8GB-Wine-Prototype-APK
-          path: winlator/app/build/outputs/apk/debug/app-debug.apk
+          name: TitanX-8G2-DriverManager-APK
+          path: output/
           if-no-files-found: error
 
-      - name: Publish matching modified source
+      - name: Publish corresponding source for license compliance
         if: success()
         shell: bash
         run: |
           set -euo pipefail
-          tar -C winlator --exclude=.git --exclude=.gradle --exclude=build --exclude='app/build' \
-            -czf titanx-8gb-modified-source.tar.gz .
+          tar -C winlator --exclude=.git --exclude=.gradle --exclude='app/build' \
+            -czf TitanX-8G2-Modified-Source.tar.gz .
 
-      - name: Upload matching source and notices
+      - name: Upload modified source and notices
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-8GB-Modified-Source-Licenses
-          path: |
-            titanx-8gb-modified-source.tar.gz
-            upstream-commit.txt
+          name: TitanX-8G2-Modified-Source
+          path: TitanX-8G2-Modified-Source.tar.gz
           if-no-files-found: error

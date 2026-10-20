@@ -3,6 +3,7 @@ package com.titanx.emulator;
 
 import android.app.Activity;
 import android.app.ActivityManager;
+import android.app.AlertDialog;
 import android.os.Bundle;
 import android.os.Build;
 import android.os.Environment;
@@ -27,27 +28,34 @@ import java.util.zip.ZipInputStream;
 public class MainActivity extends Activity {
 
     private static final int PICK_ZIP = 1001;
-    private static final long MAX_BYTES = 1024L * 1024 * 1024;
+    private static final long MAX_BYTES =
+        1024L * 1024L * 1024L;
     private static final int MAX_FILES = 10000;
 
     private TextView details;
     private TextView runtimeStatus;
     private TextView logView;
-    private SharedPreferences prefs;
-    private final StringBuilder logs = new StringBuilder();
 
+    private SharedPreferences prefs;
     private File runtimeDir;
+
+    private final StringBuilder logs =
+        new StringBuilder();
+
+    private volatile boolean busy = false;
 
     private String gb(long bytes) {
         return String.format(
-            Locale.US, "%.2f GB",
+            Locale.US,
+            "%.2f GB",
             bytes / 1073741824.0
         );
     }
 
     private void log(String message) {
         String time = new SimpleDateFormat(
-            "HH:mm:ss", Locale.US
+            "HH:mm:ss",
+            Locale.US
         ).format(new Date());
 
         logs.append(time)
@@ -56,7 +64,10 @@ public class MainActivity extends Activity {
             .append("\n");
 
         if (logs.length() > 12000) {
-            logs.delete(0, logs.length() - 10000);
+            logs.delete(
+                0,
+                logs.length() - 10000
+            );
         }
 
         if (logView != null) {
@@ -64,16 +75,24 @@ public class MainActivity extends Activity {
         }
     }
 
-    private TextView label(String text, int size) {
+    private TextView label(
+        String text,
+        int size
+    ) {
         TextView view = new TextView(this);
+
         view.setText(text);
         view.setTextSize(size);
         view.setTextColor(Color.WHITE);
         view.setPadding(12, 12, 12, 12);
+
         return view;
     }
 
-    private Button button(String text, LinearLayout root) {
+    private Button button(
+        String text,
+        LinearLayout root
+    ) {
         Button b = new Button(this);
         b.setText(text);
         root.addView(b);
@@ -81,8 +100,10 @@ public class MainActivity extends Activity {
     }
 
     private String diagnostics() {
+
         ActivityManager manager =
-            (ActivityManager) getSystemService(
+            (ActivityManager)
+            getSystemService(
                 Context.ACTIVITY_SERVICE
             );
 
@@ -98,24 +119,46 @@ public class MainActivity extends Activity {
 
         boolean vulkan =
             getPackageManager().hasSystemFeature(
-                PackageManager.FEATURE_VULKAN_HARDWARE_VERSION
+                PackageManager
+                    .FEATURE_VULKAN_HARDWARE_VERSION
             );
 
-        return "Device: " + Build.MANUFACTURER
-            + " " + Build.MODEL
-            + "\nAndroid: " + Build.VERSION.RELEASE
-            + " (API " + Build.VERSION.SDK_INT + ")"
-            + "\nABIs: "
-            + Arrays.toString(Build.SUPPORTED_ABIS)
-            + "\nRAM total: " + gb(memory.totalMem)
-            + "\nRAM available: " + gb(memory.availMem)
-            + "\nRAM low: " + memory.lowMemory
-            + "\nInternal storage: "
+        return
+            "Device: "
+            + Build.MANUFACTURER
+            + " "
+            + Build.MODEL
+
+            + "\nAndroid: "
+            + Build.VERSION.RELEASE
+
+            + "\nAPI: "
+            + Build.VERSION.SDK_INT
+
+            + "\nCPU ABIs: "
+            + Arrays.toString(
+                Build.SUPPORTED_ABIS
+            )
+
+            + "\nRAM Total: "
+            + gb(memory.totalMem)
+
+            + "\nRAM Available: "
+            + gb(memory.availMem)
+
+            + "\nLow Memory: "
+            + memory.lowMemory
+
+            + "\nStorage Free: "
             + gb(storage.getAvailableBytes())
-            + " free / "
+
+            + "\nStorage Total: "
             + gb(storage.getTotalBytes())
-            + "\nVulkan hardware feature: "
-            + (vulkan ? "Advertised" : "Not advertised");
+
+            + "\nVulkan Feature: "
+            + (vulkan
+                ? "Advertised"
+                : "Not Advertised");
     }
 
     @Override
@@ -123,19 +166,31 @@ public class MainActivity extends Activity {
         super.onCreate(state);
 
         prefs = getSharedPreferences(
-            "titanx", MODE_PRIVATE
+            "titanx",
+            MODE_PRIVATE
         );
 
         runtimeDir = new File(
-            getFilesDir(), "runtime"
+            getFilesDir(),
+            "runtime"
         );
 
-        ScrollView scroll = new ScrollView(this);
+        ScrollView scroll =
+            new ScrollView(this);
+
         scroll.setFillViewport(true);
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(24, 24, 24, 24);
+        LinearLayout root =
+            new LinearLayout(this);
+
+        root.setOrientation(
+            LinearLayout.VERTICAL
+        );
+
+        root.setPadding(
+            24, 24, 24, 24
+        );
+
         root.setBackgroundColor(
             Color.rgb(14, 20, 32)
         );
@@ -143,13 +198,24 @@ public class MainActivity extends Activity {
         scroll.addView(root);
 
         TextView title = label(
-            "TITANX EMULATOR v0.3", 24
+            "TITANX EMULATOR v0.3.1",
+            24
         );
-        title.setGravity(Gravity.CENTER);
+
+        title.setGravity(
+            Gravity.CENTER
+        );
+
         root.addView(title);
 
         root.addView(label(
-            "Device Diagnostics & Runtime Manager", 14
+            "Device Diagnostics & Runtime Manager",
+            14
+        ));
+
+        root.addView(label(
+            "PERFORMANCE PROFILE",
+            18
         ));
 
         String[] profiles = {
@@ -158,129 +224,192 @@ public class MainActivity extends Activity {
             "Performance"
         };
 
-        Spinner spinner = new Spinner(this);
+        Spinner spinner =
+            new Spinner(this);
 
         ArrayAdapter<String> adapter =
             new ArrayAdapter<>(
                 this,
-                android.R.layout.simple_spinner_dropdown_item,
+                android.R.layout
+                    .simple_spinner_dropdown_item,
                 profiles
             );
 
         spinner.setAdapter(adapter);
+
         spinner.setSelection(
-            Math.max(0, Math.min(
-                2, prefs.getInt("profile", 1)
-            ))
+            Math.max(
+                0,
+                Math.min(
+                    2,
+                    prefs.getInt(
+                        "profile", 1
+                    )
+                )
+            )
         );
 
         root.addView(spinner);
 
-        button("SAVE PROFILE", root)
-            .setOnClickListener(v -> {
-                int selected =
-                    spinner.getSelectedItemPosition();
+        button(
+            "SAVE PROFILE",
+            root
+        ).setOnClickListener(v -> {
 
-                prefs.edit()
-                    .putInt("profile", selected)
-                    .apply();
+            int selected =
+                spinner.getSelectedItemPosition();
 
-                log("Saved profile: "
-                    + profiles[selected]);
-            });
+            prefs.edit()
+                .putInt(
+                    "profile",
+                    selected
+                )
+                .apply();
+
+            log(
+                "Profile saved: "
+                + profiles[selected]
+            );
+        });
+
+        root.addView(label(
+            "DEVICE INFORMATION",
+            18
+        ));
 
         details = label("", 15);
         root.addView(details);
 
-        button("REFRESH DEVICE DIAGNOSTICS", root)
-            .setOnClickListener(v -> refresh());
+        button(
+            "REFRESH DIAGNOSTICS",
+            root
+        ).setOnClickListener(
+            v -> refresh()
+        );
 
-        button("COPY DIAGNOSTICS", root)
-            .setOnClickListener(v -> {
-                android.content.ClipboardManager cb =
-                    (android.content.ClipboardManager)
-                    getSystemService(CLIPBOARD_SERVICE);
+        button(
+            "COPY DIAGNOSTICS",
+            root
+        ).setOnClickListener(v -> {
 
-                cb.setPrimaryClip(
-                    android.content.ClipData
-                        .newPlainText(
-                            "TitanX diagnostics",
-                            details.getText()
-                        )
-                );
+            copyText(
+                "TitanX Diagnostics",
+                details.getText().toString()
+            );
 
-                log("Diagnostics copied");
-            });
+            log("Diagnostics copied");
+        });
 
         root.addView(label(
-            "RUNTIME MANAGER", 20
+            "RUNTIME MANAGER",
+            20
         ));
 
         runtimeStatus = label("", 15);
         root.addView(runtimeStatus);
 
-        button("IMPORT RUNTIME ZIP", root)
-            .setOnClickListener(v -> pickZip());
+        button(
+            "IMPORT RUNTIME ZIP",
+            root
+        ).setOnClickListener(
+            v -> pickZip()
+        );
 
-        button("REFRESH RUNTIME STATUS", root)
-            .setOnClickListener(v -> updateRuntime());
+        button(
+            "REFRESH RUNTIME STATUS",
+            root
+        ).setOnClickListener(
+            v -> updateRuntime()
+        );
 
-        button("REMOVE INSTALLED RUNTIME", root)
-            .setOnClickListener(v -> confirmRemove());
+        button(
+            "REMOVE INSTALLED RUNTIME",
+            root
+        ).setOnClickListener(
+            v -> confirmRemove()
+        );
 
-        root.addView(label("SESSION LOG", 18));
+        root.addView(label(
+            "SESSION LOG",
+            18
+        ));
 
         logView = label("", 13);
         root.addView(logView);
 
-        button("COPY SESSION LOG", root)
-            .setOnClickListener(v -> {
-                android.content.ClipboardManager cb =
-                    (android.content.ClipboardManager)
-                    getSystemService(CLIPBOARD_SERVICE);
+        button(
+            "COPY SESSION LOG",
+            root
+        ).setOnClickListener(v -> {
 
-                cb.setPrimaryClip(
-                    android.content.ClipData
-                        .newPlainText(
-                            "TitanX log",
-                            logs.toString()
-                        )
-                );
+            copyText(
+                "TitanX Session Log",
+                logs.toString()
+            );
 
-                Toast.makeText(
-                    this, "Log copied",
-                    Toast.LENGTH_SHORT
-                ).show();
-            });
+            Toast.makeText(
+                this,
+                "Log copied",
+                Toast.LENGTH_SHORT
+            ).show();
+        });
 
-        button("CLEAR LOG", root)
-            .setOnClickListener(v -> {
-                logs.setLength(0);
-                log("Log cleared");
-            });
+        button(
+            "CLEAR LOG",
+            root
+        ).setOnClickListener(v -> {
+
+            logs.setLength(0);
+            log("Log cleared");
+        });
 
         setContentView(scroll);
 
-        log("TitanX v0.3 started");
+        log("TitanX v0.3.1 started");
         log("Native Windows runtime not integrated");
 
         refresh();
         updateRuntime();
     }
 
+    private void copyText(
+        String title,
+        String value
+    ) {
+        android.content.ClipboardManager cb =
+            (android.content.ClipboardManager)
+            getSystemService(
+                CLIPBOARD_SERVICE
+            );
+
+        cb.setPrimaryClip(
+            android.content.ClipData
+                .newPlainText(
+                    title,
+                    value
+                )
+        );
+    }
+
     private void refresh() {
-        details.setText(diagnostics());
+        details.setText(
+            diagnostics()
+        );
+
         log("Diagnostics refreshed");
     }
 
     private void updateRuntime() {
+
         if (!runtimeDir.exists()) {
+
             runtimeStatus.setText(
                 "Runtime: NOT INSTALLED"
                 + "\nWine: NOT CONFIGURED"
                 + "\nFEX / Box64: NOT CONFIGURED"
                 + "\nDXVK: NOT CONFIGURED"
             );
+
             return;
         }
 
@@ -290,26 +419,33 @@ public class MainActivity extends Activity {
             "Runtime files: PRESENT"
             + "\nFiles: " + stats[0]
             + "\nSize: " + gb(stats[1])
-            + "\nPath: Private app storage"
+            + "\nStorage: Private App Storage"
             + "\nExecution: NOT INTEGRATED"
         );
     }
 
     private long[] scan(File dir) {
+
         long count = 0;
         long size = 0;
 
         File[] files = dir.listFiles();
+
         if (files == null) {
             return new long[]{0, 0};
         }
 
         for (File f : files) {
+
             if (f.isDirectory()) {
+
                 long[] child = scan(f);
+
                 count += child[0];
                 size += child[1];
+
             } else {
+
                 count++;
                 size += f.length();
             }
@@ -319,17 +455,33 @@ public class MainActivity extends Activity {
     }
 
     private void pickZip() {
+
+        if (busy) {
+            Toast.makeText(
+                this,
+                "Runtime operation in progress",
+                Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+
         Intent intent = new Intent(
             Intent.ACTION_OPEN_DOCUMENT
         );
 
-        intent.setType("application/zip");
+        intent.setType("*/*");
+
         intent.addCategory(
             Intent.CATEGORY_OPENABLE
         );
 
+        intent.addFlags(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION
+        );
+
         startActivityForResult(
-            intent, PICK_ZIP
+            intent,
+            PICK_ZIP
         );
     }
 
@@ -339,56 +491,86 @@ public class MainActivity extends Activity {
         int resultCode,
         Intent data
     ) {
+
         super.onActivityResult(
-            requestCode, resultCode, data
+            requestCode,
+            resultCode,
+            data
         );
 
-        if (requestCode != PICK_ZIP
+        if (
+            requestCode != PICK_ZIP
             || resultCode != RESULT_OK
-            || data == null) {
+            || data == null
+        ) {
             return;
         }
 
         Uri uri = data.getData();
-        if (uri == null) return;
+
+        if (uri == null) {
+            return;
+        }
 
         new AlertDialog.Builder(this)
-            .setTitle("Import Runtime")
+            .setTitle("Import Runtime ZIP")
             .setMessage(
-                "Extract the selected ZIP into "
-                + "TitanX private storage?\n\n"
-                + "Only import files from trusted sources."
+                "Extract this ZIP into TitanX "
+                + "private storage?\n\n"
+                + "Existing runtime files will "
+                + "be replaced after extraction.\n\n"
+                + "Only import trusted files."
             )
-            .setNegativeButton("CANCEL", null)
+            .setNegativeButton(
+                "CANCEL",
+                null
+            )
             .setPositiveButton(
                 "IMPORT",
-                (dialog, which) -> importZip(uri)
+                (dialog, which) ->
+                    importZip(uri)
             )
             .show();
     }
 
     private void importZip(Uri uri) {
-        log("Starting ZIP import");
 
-        File staging = new File(
-            getFilesDir(), "runtime_staging"
-        );
-
-        if (!deleteTree(staging) || !staging.mkdirs()) {
-            log("ERROR: Cannot create staging directory");
+        if (busy) {
+            log("Another operation is running");
             return;
         }
 
-        Toast.makeText(
-            this, "Import started",
-            Toast.LENGTH_SHORT
-        ).show();
+        busy = true;
+
+        log("Starting runtime ZIP import");
+
+        File staging = new File(
+            getFilesDir(),
+            "runtime_staging"
+        );
 
         new Thread(() -> {
+
             String result;
 
             try {
-                extractZip(uri, staging);
+
+                if (!deleteTree(staging)) {
+                    throw new IOException(
+                        "Cannot clear staging"
+                    );
+                }
+
+                if (!staging.mkdirs()) {
+                    throw new IOException(
+                        "Cannot create staging"
+                    );
+                }
+
+                extractZip(
+                    uri,
+                    staging
+                );
 
                 if (!deleteTree(runtimeDir)) {
                     throw new IOException(
@@ -402,153 +584,199 @@ public class MainActivity extends Activity {
                     );
                 }
 
-                result = "Runtime ZIP imported successfully";
+                result =
+                    "Runtime ZIP imported successfully";
+
             } catch (Exception e) {
+
                 deleteTree(staging);
-                result = "Import failed: " + e.getMessage();
+
+                result =
+                    "Import failed: "
+                    + e.getMessage();
             }
 
             final String message = result;
 
             runOnUiThread(() -> {
+
+                busy = false;
+
                 log(message);
                 updateRuntime();
 
                 Toast.makeText(
-                    this, message,
+                    this,
+                    message,
                     Toast.LENGTH_LONG
                 ).show();
             });
+
         }).start();
     }
 
     private void extractZip(
-        Uri uri, File destination
+        Uri uri,
+        File destination
     ) throws IOException {
 
-        String base = destination.getCanonicalPath()
+        String base =
+            destination.getCanonicalPath()
             + File.separator;
 
         long totalBytes = 0;
         int count = 0;
 
+        InputStream input =
+            getContentResolver()
+                .openInputStream(uri);
+
+        if (input == null) {
+            throw new IOException(
+                "Cannot open selected file"
+            );
+        }
+
         try (
-            InputStream input =
-                getContentResolver().openInputStream(uri)
+            InputStream source = input;
+            ZipInputStream zip =
+                new ZipInputStream(
+                    new BufferedInputStream(source)
+                )
         ) {
-            if (input == null) {
-                throw new IOException(
-                    "Cannot open ZIP"
-                );
-            }
 
-            try (
-                ZipInputStream zip =
-                    new ZipInputStream(
-                        new BufferedInputStream(input)
-                    )
+            ZipEntry entry;
+
+            byte[] buffer =
+                new byte[32768];
+
+            while (
+                (entry = zip.getNextEntry()) != null
             ) {
-                ZipEntry entry;
-                byte[] buffer = new byte[32768];
 
-                while (
-                    (entry = zip.getNextEntry()) != null
-                ) {
-                    count++;
+                count++;
 
-                    if (count > MAX_FILES) {
-                        throw new IOException(
-                            "Too many ZIP entries"
-                        );
-                    }
-
-                    String name = entry.getName();
-
-                    if (name.startsWith("/")
-                        || name.startsWith("\\")
-                        || name.contains("\\")) {
-                        throw new IOException(
-                            "Unsafe ZIP path"
-                        );
-                    }
-
-                    File target = new File(
-                        destination, name
+                if (count > MAX_FILES) {
+                    throw new IOException(
+                        "Too many ZIP entries"
                     );
+                }
 
-                    String canonical =
-                        target.getCanonicalPath();
+                String name =
+                    entry.getName();
 
-                    if (!canonical.startsWith(base)) {
+                if (
+                    name.startsWith("/")
+                    || name.startsWith("\\")
+                    || name.contains("\\")
+                    || name.indexOf('\0') >= 0
+                ) {
+                    throw new IOException(
+                        "Unsafe ZIP path"
+                    );
+                }
+
+                File target = new File(
+                    destination,
+                    name
+                );
+
+                String canonical =
+                    target.getCanonicalPath();
+
+                if (
+                    !canonical.startsWith(base)
+                ) {
+                    throw new IOException(
+                        "ZIP path traversal blocked"
+                    );
+                }
+
+                if (entry.isDirectory()) {
+
+                    if (
+                        !target.isDirectory()
+                        && !target.mkdirs()
+                    ) {
                         throw new IOException(
-                            "Unsafe ZIP entry"
+                            "Cannot create directory"
                         );
                     }
 
-                    if (entry.isDirectory()) {
-                        if (!target.isDirectory()
-                            && !target.mkdirs()) {
-                            throw new IOException(
-                                "Cannot create directory"
-                            );
-                        }
-                    } else {
-                        File parent = target.getParentFile();
+                } else {
 
-                        if (!parent.isDirectory()
-                            && !parent.mkdirs()) {
-                            throw new IOException(
-                                "Cannot create parent"
-                            );
-                        }
+                    File parent =
+                        target.getParentFile();
 
-                        try (
-                            OutputStream output =
-                                new BufferedOutputStream(
-                                    new FileOutputStream(target)
-                                )
+                    if (
+                        !parent.isDirectory()
+                        && !parent.mkdirs()
+                    ) {
+                        throw new IOException(
+                            "Cannot create parent"
+                        );
+                    }
+
+                    try (
+                        OutputStream output =
+                            new BufferedOutputStream(
+                                new FileOutputStream(target)
+                            )
+                    ) {
+
+                        int read;
+
+                        while (
+                            (read = zip.read(buffer)) != -1
                         ) {
-                            int read;
 
-                            while (
-                                (read = zip.read(buffer)) != -1
+                            totalBytes += read;
+
+                            if (
+                                totalBytes > MAX_BYTES
                             ) {
-                                totalBytes += read;
-
-                                if (totalBytes > MAX_BYTES) {
-                                    throw new IOException(
-                                        "ZIP exceeds 1 GB limit"
-                                    );
-                                }
-
-                                output.write(
-                                    buffer, 0, read
+                                throw new IOException(
+                                    "ZIP exceeds 1 GB limit"
                                 );
                             }
+
+                            output.write(
+                                buffer,
+                                0,
+                                read
+                            );
                         }
                     }
-
-                    zip.closeEntry();
                 }
+
+                zip.closeEntry();
             }
         }
 
         if (count == 0) {
             throw new IOException(
-                "ZIP is empty or invalid"
+                "ZIP empty or invalid"
             );
         }
     }
 
     private boolean deleteTree(File file) {
-        if (!file.exists()) return true;
+
+        if (!file.exists()) {
+            return true;
+        }
 
         if (file.isDirectory()) {
-            File[] children = file.listFiles();
 
-            if (children == null) return false;
+            File[] children =
+                file.listFiles();
+
+            if (children == null) {
+                return false;
+            }
 
             for (File child : children) {
+
                 if (!deleteTree(child)) {
                     return false;
                 }
@@ -559,23 +787,50 @@ public class MainActivity extends Activity {
     }
 
     private void confirmRemove() {
+
+        if (busy) {
+            Toast.makeText(
+                this,
+                "Runtime operation in progress",
+                Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+
         new AlertDialog.Builder(this)
             .setTitle("Remove Runtime")
             .setMessage(
                 "Delete all imported runtime files?"
             )
-            .setNegativeButton("CANCEL", null)
+            .setNegativeButton(
+                "CANCEL",
+                null
+            )
             .setPositiveButton(
                 "DELETE",
                 (dialog, which) -> {
-                    boolean success =
-                        deleteTree(runtimeDir);
 
-                    log(success
-                        ? "Runtime removed"
-                        : "Runtime removal failed");
+                    busy = true;
 
-                    updateRuntime();
+                    new Thread(() -> {
+
+                        boolean success =
+                            deleteTree(runtimeDir);
+
+                        runOnUiThread(() -> {
+
+                            busy = false;
+
+                            log(
+                                success
+                                ? "Runtime removed"
+                                : "Runtime removal failed"
+                            );
+
+                            updateRuntime();
+                        });
+
+                    }).start();
                 }
             )
             .show();

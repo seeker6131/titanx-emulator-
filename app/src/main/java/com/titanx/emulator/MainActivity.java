@@ -156,7 +156,7 @@ public class MainActivity extends Activity {
             getFilesDir(), "runtime"
         );
 
-        log("TitanX v1.4 started");
+        log("TitanX v1.5 started");
         buildLayout();
         page("Dashboard");
     }
@@ -206,7 +206,7 @@ public class MainActivity extends Activity {
         nav.removeAllViews();
 
         subtitle.setText(
-            "v1.4 • " + Build.SUPPORTED_ABIS[0]
+            "v1.5 • " + Build.SUPPORTED_ABIS[0]
             + " • " + (runtime.isDirectory()
                 ? "Runtime files present"
                 : "Runtime offline")
@@ -273,6 +273,7 @@ public class MainActivity extends Activity {
         field(e, "DEPENDENCY GRAPH", "v1.2");
         field(e, "PACKAGE VALIDATOR", "v1.3");
         field(e, "RUNTIME READINESS", "v1.4");
+        field(e, "COMPONENT MANAGER", "v1.5");
         field(e, "WINE", "Not integrated");
         field(e, "FEX", "Not integrated");
         field(e, "DXVK", "Not integrated");
@@ -294,6 +295,9 @@ public class MainActivity extends Activity {
         note(c, "Files are inspected, not executed.");
 
         if (runtime.isDirectory()) {
+            button(c, "SCAN RUNTIME COMPONENTS",
+                this::componentsAsync);
+
             button(c, "ANALYZE RUNTIME READINESS",
                 this::readinessAsync);
 
@@ -318,6 +322,9 @@ public class MainActivity extends Activity {
             button(c, "VERIFY PACKAGE MANIFEST",
                 this::verifyManifestAsync);
         }
+
+        button(c, "RUN COMPONENT SELF-TEST",
+            this::componentTestAsync);
 
         button(c, "RUN READINESS SELF-TEST",
             this::readinessTestAsync);
@@ -345,28 +352,27 @@ public class MainActivity extends Activity {
                 this::removeRuntime);
         }
 
-        heading("RUNTIME READINESS");
+        heading("RUNTIME COMPONENT CAPABILITIES");
         LinearLayout info = card();
 
-        field(info, "ELF INVENTORY",
-            "Architecture and file count");
-
-        field(info, "PACKAGE FINGERPRINT",
-            "SHA-256 over file inventory");
-
-        field(info, "COMPONENT INDICATORS",
-            "Wine / FEX / Box64 / DXVK filenames");
-
-        field(info, "MANIFEST STATUS",
-            "Saved baseline presence");
-
-        field(info, "EXECUTION STATUS",
+        field(info, "WINE",
+            "Detect known Wine filenames");
+        field(info, "FEX",
+            "Detect FEX interpreter candidates");
+        field(info, "BOX64 / BOX86",
+            "Detect translator candidates");
+        field(info, "DXVK",
+            "Detect Direct3D DLL candidates");
+        field(info, "ARCHITECTURE",
+            "Read ELF machine type");
+        field(info, "EXECUTION",
             "Not integrated");
 
         note(info,
-            "Filename indicators are not proof "
-            + "of runtime compatibility. "
-            + "Windows execution is not available.");
+            "Component detection uses filenames "
+            + "and ELF metadata only. "
+            + "It does not validate Windows "
+            + "runtime functionality.");
     }
 
     private void asyncReport(
@@ -399,6 +405,20 @@ public class MainActivity extends Activity {
                 report(title, value);
             });
         }).start();
+    }
+
+    private void componentsAsync() {
+        asyncReport(
+            "TitanX Component Manager v1.5",
+            () -> RuntimeComponents.analyze(runtime)
+        );
+    }
+
+    private void componentTestAsync() {
+        asyncReport(
+            "TitanX Component Self-Test v1.5",
+            RuntimeComponents::selfTest
+        );
     }
 
     private void readinessAsync() {
@@ -615,7 +635,7 @@ public class MainActivity extends Activity {
         field(c, "DXVK", "Not integrated");
 
         note(c,
-            "TitanX v1.4 inspects runtime readiness. "
+            "TitanX v1.5 inspects runtime components. "
             + "Windows game execution is not available.");
 
         button(c, "OPEN RUNTIME",

@@ -1,3 +1,4 @@
+
 package com.titanx.emulator;
 
 import android.app.Activity;
@@ -42,8 +43,10 @@ public class GlibcTestActivity extends Activity {
     private volatile boolean busy;
 
     private int dp(int n) {
-        return (int) (n *
-            getResources().getDisplayMetrics().density);
+        return (int) (
+            n * getResources()
+                .getDisplayMetrics().density
+        );
     }
 
     private GradientDrawable background(int color) {
@@ -53,7 +56,11 @@ public class GlibcTestActivity extends Activity {
         return d;
     }
 
-    private TextView text(String value, int size, int color) {
+    private TextView text(
+        String value,
+        int size,
+        int color
+    ) {
         TextView t = new TextView(this);
         t.setText(value);
         t.setTextSize(size);
@@ -68,6 +75,7 @@ public class GlibcTestActivity extends Activity {
         Runnable action
     ) {
         Button b = new Button(this);
+
         b.setText(name);
         b.setAllCaps(false);
         b.setTextColor(BG);
@@ -75,24 +83,41 @@ public class GlibcTestActivity extends Activity {
         b.setBackground(background(GREEN));
 
         LinearLayout.LayoutParams p =
-            new LinearLayout.LayoutParams(-1, dp(58));
-        p.bottomMargin = dp(12);
+            new LinearLayout.LayoutParams(
+                -1,
+                dp(58)
+            );
 
+        p.bottomMargin = dp(12);
         parent.addView(b, p);
+
         b.setOnClickListener(v -> action.run());
     }
 
-    private LinearLayout card(LinearLayout parent) {
+    private LinearLayout card(
+        LinearLayout parent
+    ) {
         LinearLayout c = new LinearLayout(this);
+
         c.setOrientation(LinearLayout.VERTICAL);
-        c.setPadding(dp(18), dp(18), dp(18), dp(18));
+        c.setPadding(
+            dp(18),
+            dp(18),
+            dp(18),
+            dp(18)
+        );
+
         c.setBackground(background(PANEL));
 
         LinearLayout.LayoutParams p =
-            new LinearLayout.LayoutParams(-1, -2);
-        p.bottomMargin = dp(16);
+            new LinearLayout.LayoutParams(
+                -1,
+                -2
+            );
 
+        p.bottomMargin = dp(16);
         parent.addView(c, p);
+
         return c;
     }
 
@@ -103,19 +128,31 @@ public class GlibcTestActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
 
+        // Reuse the files installed by v2.7.
         runtimeDir = new File(
             getFilesDir(),
             "titanx_glibc_v27"
         );
 
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(
-            dp(16), dp(22), dp(16), dp(20)
+        LinearLayout root =
+            new LinearLayout(this);
+
+        root.setOrientation(
+            LinearLayout.VERTICAL
         );
+
+        root.setPadding(
+            dp(16),
+            dp(22),
+            dp(16),
+            dp(20)
+        );
+
         root.setBackgroundColor(BG);
 
-        ScrollView scroll = new ScrollView(this);
+        ScrollView scroll =
+            new ScrollView(this);
+
         scroll.addView(root);
         setContentView(scroll);
 
@@ -126,7 +163,7 @@ public class GlibcTestActivity extends Activity {
         ));
 
         root.addView(text(
-            "v2.7 • Linux x86-64 GLIBC Test",
+            "v2.8 - Box64 GLIBC Execution Fix",
             14,
             GREEN
         ));
@@ -140,8 +177,9 @@ public class GlibcTestActivity extends Activity {
         ));
 
         info.addView(text(
-            "CPU test: available in previous screen\n" +
-            "Glibc test: ready to inspect\n" +
+            "Box64: embedded ARM64\n" +
+            "GLIBC: x86-64 runtime\n" +
+            "Execution: direct test binary\n" +
             "Wine: not integrated\n" +
             "GTA V: not available",
             14,
@@ -153,6 +191,7 @@ public class GlibcTestActivity extends Activity {
             16,
             GREEN
         );
+
         info.addView(status);
 
         button(
@@ -169,7 +208,7 @@ public class GlibcTestActivity extends Activity {
 
         button(
             info,
-            "RUN GLIBC TEST",
+            "RUN GLIBC TEST v2.8",
             this::runGlibcTest
         );
 
@@ -193,10 +232,11 @@ public class GlibcTestActivity extends Activity {
         ));
 
         log = text(
-            "Check assets, install files, then run test.",
+            "Ready. Run GLIBC test.",
             13,
             Color.WHITE
         );
+
         log.setTextIsSelectable(true);
         outputCard.addView(log);
 
@@ -223,12 +263,17 @@ public class GlibcTestActivity extends Activity {
         File file,
         int machine
     ) throws Exception {
-        if (!file.isFile()) return false;
+
+        if (!file.isFile()) {
+            return false;
+        }
 
         byte[] h = new byte[20];
 
-        try (FileInputStream in =
-                 new FileInputStream(file)) {
+        try (
+            FileInputStream in =
+                new FileInputStream(file)
+        ) {
             int offset = 0;
 
             while (offset < h.length) {
@@ -238,7 +283,10 @@ public class GlibcTestActivity extends Activity {
                     h.length - offset
                 );
 
-                if (n < 0) return false;
+                if (n < 0) {
+                    return false;
+                }
+
                 offset += n;
             }
         }
@@ -276,7 +324,7 @@ public class GlibcTestActivity extends Activity {
             log.setText(report);
 
             new AlertDialog.Builder(this)
-                .setTitle("TitanX v2.7")
+                .setTitle("TitanX v2.8")
                 .setMessage(report)
                 .setPositiveButton("OK", null)
                 .show();
@@ -284,16 +332,22 @@ public class GlibcTestActivity extends Activity {
     }
 
     private boolean begin(String message) {
-        if (busy) return false;
+        if (busy) {
+            return false;
+        }
 
         busy = true;
+
         status.setText("STATUS: WORKING");
         log.setText(message);
+
         return true;
     }
 
     private void inspectAssets() {
-        if (!begin("Inspecting APK assets...")) return;
+        if (!begin("Inspecting assets...")) {
+            return;
+        }
 
         new Thread(() -> {
             StringBuilder report =
@@ -307,14 +361,20 @@ public class GlibcTestActivity extends Activity {
                 for (String name : FILES) {
                     long count = 0;
 
-                    try (InputStream in =
-                        assets.open(
-                            ASSET_DIR + "/" + name
-                        )) {
-                        byte[] buffer = new byte[8192];
+                    try (
+                        InputStream in =
+                            assets.open(
+                                ASSET_DIR + "/" + name
+                            )
+                    ) {
+                        byte[] buffer =
+                            new byte[8192];
+
                         int n;
 
-                        while ((n = in.read(buffer)) != -1) {
+                        while (
+                            (n = in.read(buffer)) != -1
+                        ) {
                             count += n;
                         }
                     }
@@ -324,24 +384,32 @@ public class GlibcTestActivity extends Activity {
                         .append(count)
                         .append(" bytes\n");
 
-                    if (count == 0) pass = false;
+                    if (count == 0) {
+                        pass = false;
+                    }
                 }
 
                 File box = box64();
 
-                report.append("\nBox64 exists: ")
-                    .append(box.isFile());
+                report.append(
+                    "\nBox64 exists: "
+                ).append(box.isFile());
 
-                report.append("\nBox64 ARM64 ELF: ")
-                    .append(validElf(box, 183));
+                boolean boxValid =
+                    validElf(box, 183);
 
-                if (!validElf(box, 183)) {
+                report.append(
+                    "\nBox64 ARM64 ELF: "
+                ).append(boxValid);
+
+                if (!boxValid) {
                     pass = false;
                 }
 
             } catch (Exception e) {
                 pass = false;
-                report.append("\nERROR: ")
+
+                report.append("\nERROR:\n")
                     .append(e);
             }
 
@@ -354,7 +422,9 @@ public class GlibcTestActivity extends Activity {
     }
 
     private void installAssets() {
-        if (!begin("Installing glibc assets...")) return;
+        if (!begin("Installing GLIBC files...")) {
+            return;
+        }
 
         new Thread(() -> {
             StringBuilder report =
@@ -363,15 +433,19 @@ public class GlibcTestActivity extends Activity {
             boolean pass = true;
 
             try {
-                if (!runtimeDir.exists()
-                    && !runtimeDir.mkdirs()) {
+                if (
+                    !runtimeDir.exists()
+                    && !runtimeDir.mkdirs()
+                ) {
                     throw new Exception(
                         "Cannot create runtime directory"
                     );
                 }
 
                 for (String name : FILES) {
-                    File destination = installed(name);
+                    File destination =
+                        installed(name);
+
                     File temp = new File(
                         runtimeDir,
                         name + ".tmp"
@@ -382,27 +456,40 @@ public class GlibcTestActivity extends Activity {
                             getAssets().open(
                                 ASSET_DIR + "/" + name
                             );
+
                         FileOutputStream out =
                             new FileOutputStream(temp)
                     ) {
-                        byte[] buffer = new byte[8192];
+                        byte[] buffer =
+                            new byte[8192];
+
                         int n;
 
-                        while ((n = in.read(buffer)) != -1) {
-                            out.write(buffer, 0, n);
+                        while (
+                            (n = in.read(buffer)) != -1
+                        ) {
+                            out.write(
+                                buffer,
+                                0,
+                                n
+                            );
                         }
 
                         out.getFD().sync();
                     }
 
-                    if (destination.exists()
-                        && !destination.delete()) {
+                    if (
+                        destination.exists()
+                        && !destination.delete()
+                    ) {
                         throw new Exception(
                             "Cannot replace " + name
                         );
                     }
 
-                    if (!temp.renameTo(destination)) {
+                    if (
+                        !temp.renameTo(destination)
+                    ) {
                         throw new Exception(
                             "Cannot install " + name
                         );
@@ -410,28 +497,37 @@ public class GlibcTestActivity extends Activity {
 
                     report.append(name)
                         .append(": ")
-                        .append(destination.length())
+                        .append(
+                            destination.length()
+                        )
                         .append(" bytes\n");
                 }
 
                 for (String name : FILES) {
-                    if (!validElf(installed(name), 62)) {
+                    if (
+                        !validElf(
+                            installed(name),
+                            62
+                        )
+                    ) {
                         throw new Exception(
-                            "Invalid x86-64 ELF: " + name
+                            "Invalid x86-64 ELF: "
+                                + name
                         );
                     }
                 }
 
                 report.append(
-                    "\nAll files are valid x86-64 ELF."
+                    "\nAll files valid x86-64 ELF."
                 );
 
                 report.append(
-                    "\nInstalled successfully."
+                    "\nInstallation complete."
                 );
 
             } catch (Exception e) {
                 pass = false;
+
                 report.append("\nERROR:\n")
                     .append(e);
             }
@@ -445,7 +541,9 @@ public class GlibcTestActivity extends Activity {
     }
 
     private void runGlibcTest() {
-        if (!begin("Running Box64 glibc test...")) return;
+        if (!begin("Running GLIBC test v2.8...")) {
+            return;
+        }
 
         new Thread(() -> {
             StringBuilder report =
@@ -456,43 +554,49 @@ public class GlibcTestActivity extends Activity {
 
             try {
                 File box = box64();
+
                 File loader = installed(
                     "ld-linux-x86-64.so.2"
                 );
-                File libc = installed("libc.so.6");
+
+                File libc = installed(
+                    "libc.so.6"
+                );
+
                 File test = installed(
                     "titanx_glibc_test"
                 );
 
                 if (!validElf(box, 183)) {
                     throw new Exception(
-                        "Box64 ARM64 binary missing or invalid"
+                        "Box64 ARM64 ELF missing or invalid"
                     );
                 }
 
-                if (!validElf(loader, 62)
+                if (
+                    !validElf(loader, 62)
                     || !validElf(libc, 62)
-                    || !validElf(test, 62)) {
+                    || !validElf(test, 62)
+                ) {
                     throw new Exception(
-                        "Install glibc files first"
+                        "GLIBC files missing. " +
+                        "Press INSTALL GLIBC TEST FILES."
                     );
                 }
 
                 /*
-                 * Android app-private files may not
-                 * be executable directly on modern
-                 * Android. The ARM64 Box64 binary
-                 * runs from APK nativeLibraryDir.
+                 * v2.8 FIX:
                  *
-                 * The x86-64 loader is supplied as
-                 * an argument to Box64.
+                 * Execute the x86-64 test program
+                 * directly through Box64.
+                 *
+                 * Do not pass ld-linux-x86-64.so.2
+                 * as the primary executable.
                  */
+
                 ProcessBuilder pb =
                     new ProcessBuilder(
                         box.getAbsolutePath(),
-                        loader.getAbsolutePath(),
-                        "--library-path",
-                        runtimeDir.getAbsolutePath(),
                         test.getAbsolutePath()
                     );
 
@@ -503,51 +607,84 @@ public class GlibcTestActivity extends Activity {
                     pb.environment();
 
                 env.put("BOX64_LOG", "1");
+
                 env.put(
                     "BOX64_LD_LIBRARY_PATH",
                     runtimeDir.getAbsolutePath()
                 );
+
+                env.put(
+                    "LD_LIBRARY_PATH",
+                    runtimeDir.getAbsolutePath()
+                );
+
                 env.put(
                     "HOME",
                     getFilesDir().getAbsolutePath()
                 );
+
                 env.put(
                     "TMPDIR",
                     getCacheDir().getAbsolutePath()
                 );
 
                 report.append("BOX64:\n")
-                    .append(box.getAbsolutePath());
+                    .append(
+                        box.getAbsolutePath()
+                    );
 
                 report.append("\n\nLOADER:\n")
-                    .append(loader.getAbsolutePath());
+                    .append(
+                        loader.getAbsolutePath()
+                    );
+
+                report.append("\n\nLIBC:\n")
+                    .append(
+                        libc.getAbsolutePath()
+                    );
 
                 report.append("\n\nTEST:\n")
-                    .append(test.getAbsolutePath());
+                    .append(
+                        test.getAbsolutePath()
+                    );
+
+                report.append(
+                    "\n\nCOMMAND MODE: DIRECT X86-64"
+                );
 
                 process = pb.start();
 
                 final Process running = process;
+
                 ByteArrayOutputStream bytes =
                     new ByteArrayOutputStream();
 
                 Thread reader = new Thread(() -> {
-                    try (InputStream in =
-                        running.getInputStream()) {
+                    try (
+                        InputStream in =
+                            running.getInputStream()
+                    ) {
+                        byte[] buffer =
+                            new byte[4096];
 
-                        byte[] buffer = new byte[4096];
                         int n;
 
-                        while ((n = in.read(buffer)) != -1) {
+                        while (
+                            (n = in.read(buffer)) != -1
+                        ) {
                             synchronized (bytes) {
                                 int remaining =
-                                    131072 - bytes.size();
+                                    131072
+                                    - bytes.size();
 
                                 if (remaining > 0) {
                                     bytes.write(
                                         buffer,
                                         0,
-                                        Math.min(n, remaining)
+                                        Math.min(
+                                            n,
+                                            remaining
+                                        )
                                     );
                                 }
                             }
@@ -567,9 +704,11 @@ public class GlibcTestActivity extends Activity {
                 int exitCode = -1;
 
                 if (finished) {
-                    exitCode = process.exitValue();
+                    exitCode =
+                        process.exitValue();
                 } else {
                     process.destroyForcibly();
+
                     process.waitFor(
                         3,
                         TimeUnit.SECONDS
@@ -597,30 +736,76 @@ public class GlibcTestActivity extends Activity {
                         "DYNAMIC LIBRARY TEST PASS"
                     );
 
-                report.append("\n\nEXIT CODE: ")
-                    .append(exitCode);
+                report.append(
+                    "\n\nEXIT CODE: "
+                ).append(exitCode);
 
-                report.append("\nTIMEOUT: ")
-                    .append(!finished);
+                report.append(
+                    "\nTIMEOUT: "
+                ).append(!finished);
 
-                report.append("\nGLIBC RESULT: ")
-                    .append(pass ? "PASS" : "FAIL");
+                report.append(
+                    "\nGLIBC RESULT: "
+                ).append(
+                    pass ? "PASS" : "FAIL"
+                );
 
-                report.append("\n\nOUTPUT:\n")
-                    .append(output);
+                report.append(
+                    "\n\nOUTPUT:\n"
+                ).append(output);
+
+                if (!pass) {
+                    report.append(
+                        "\n\nDIAGNOSTIC:\n"
+                    );
+
+                    if (!finished) {
+                        report.append(
+                            "Process timed out."
+                        );
+                    } else if (
+                        output.contains(
+                            "not found"
+                        ) || output.contains(
+                            "No such file"
+                        )
+                    ) {
+                        report.append(
+                            "A runtime dependency " +
+                            "or loader may be missing."
+                        );
+                    } else if (
+                        output.contains(
+                            "Error loading"
+                        )
+                    ) {
+                        report.append(
+                            "Box64 could not load " +
+                            "the x86-64 program."
+                        );
+                    } else {
+                        report.append(
+                            "Check Box64 output above."
+                        );
+                    }
+                }
 
             } catch (Exception e) {
-                report.append("\n\nERROR:\n")
-                    .append(e);
+                report.append(
+                    "\n\nERROR:\n"
+                ).append(e);
+
             } finally {
-                if (process != null
-                    && process.isAlive()) {
+                if (
+                    process != null
+                    && process.isAlive()
+                ) {
                     process.destroyForcibly();
                 }
             }
 
             result(
-                "TITANX GLIBC TEST v2.7",
+                "TITANX GLIBC TEST v2.8",
                 report.toString(),
                 pass
             );

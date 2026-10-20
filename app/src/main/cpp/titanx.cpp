@@ -7,49 +7,22 @@
 #include <string>
 #include <vector>
 #include <sstream>
-#include <algorithm>
 
-static const uint64_t MAX_FILE = 64ULL * 1024 * 1024;
+using Bytes = std::vector<unsigned char>;
 
-static std::string cpuArchitecture() {
-#if defined(__aarch64__)
-    return "ARM64 / AArch64";
-#elif defined(__arm__)
-    return "ARM32";
-#elif defined(__x86_64__)
-    return "x86-64";
-#else
-    return "Unknown";
-#endif
+static bool within(uint64_t p, uint64_t n, uint64_t size) {
+    return p <= size && n <= size - p;
 }
 
-static bool rangeOK(
-    uint64_t off,
-    uint64_t len,
-    uint64_t size
-) {
-    return off <= size && len <= size - off;
-}
-
-template<typename T>
-static bool readAt(
-    const std::vector<uint8_t>& data,
-    uint64_t offset,
-    T& result
-) {
-    if (!rangeOK(offset, sizeof(T), data.size()))
-        return false;
-
-    std::memcpy(
-        &result,
-        data.data() + offset,
-        sizeof(T)
-    );
+template<class T>
+static bool get(const Bytes& b, uint64_t p, T& value) {
+    if (!within(p, sizeof(T), b.size())) return false;
+    memcpy(&value, b.data() + p, sizeof(T));
     return true;
 }
 
-static std::string machineName(uint16_t machine) {
-    switch (machine) {
+static std::string arch(uint16_t m) {
+    switch (m) {
         case EM_AARCH64: return "ARM64";
         case EM_ARM: return "ARM32";
         case EM_386: return "x86";
@@ -58,353 +31,246 @@ static std::string machineName(uint16_t machine) {
     }
 }
 
-static std::string typeName(uint16_t type) {
-    switch (type) {
+static std::string type(uint16_t t) {
+    switch (t) {
         case ET_EXEC: return "Executable";
         case ET_DYN: return "Shared object / PIE";
         case ET_REL: return "Relocatable";
-        case ET_CORE: return "Core";
-        default: return "Unknown";
+        default: return "Other";
     }
 }
 
-template<typename EH, typename PH, typename DY>
-static std::string inspectTyped(
-    const std::vector<uint8_t>& data,
-    const EH& header
-) {
+template<class EH, class PH, class DY>
+static std::string parse(const Bytes& b, const EH& h) {
     std::ostringstream out;
-
     out << "ELF detected\n";
-    out << "Architecture: "
-        << machineName(header.e_machine) << "\n";
-    out << "Type: "
-        << typeName(header.e_type) << "\n";
-    out << "Machine ID: "
-        << header.e_machine << "\n";
+    out << "Architecture: " << arch(h.e_machine) << "\n";
+    out << "Type: " << type(h.e_type) << "\n";
+    out << "Machine ID: " << h.e_machine << "\n";
 
-    if (header.e_phnum == 0) {
-        out << "Dependencies: No program headers\n";
+    if (h.e_phnum == 0) {
+        out << "DT_SONAME: None\nDT_NEEDED: None\n";
         return out.str();
     }
 
-    if (header.e_phentsize != sizeof(PH)) {
-        out << "Error: Invalid program header size\n";
-        return out.str();
-    }
-
-    uint64_t phBytes =
-        uint64_t(header.e_phnum) * sizeof(PH);
-
-    if (!rangeOK(
-        header.e_phoff, phBytes, data.size()
-    )) {
-        out << "Error: Program headers out of range\n";
-        return out.str();
+    if (h.e_phentsize != sizeof(PH) ||
+        !within(h.e_phoff,
+            uint64_t(h.e_phnum) * sizeof(PH), b.size())) {
+        return "Error: Invalid program headers";
     }
 
     std::vector<PH> loads;
-    PH dynamicPH = {};
-    bool hasDynamic = false;
+    PH dynamic = {};
+    bool foundDynamic = false;
 
-    for (uint32_t i = 0; i < header.e_phnum; i++) {
-        PH ph = {};
-
-        uint64_t off = uint64_t(header.e_phoff)
-            + uint64_t(i) * sizeof(PH);
-
-        if (!readAt(data, off, ph)) {
-            out << "Error: Cannot read program header\n";
-            return out.str();
+    for (uint32_t i = 0; i < h.e_phnum; ++i) {
+        PH p = {};
+        if (!get(b, uint64_t(h.e_phoff) +
+                     uint64_t(i) * sizeof(PH), p)) {
+            return "Error: Cannot read program header";
         }
 
-        if (ph.p_type == PT_LOAD) {
-            if (!rangeOK(
-                ph.p_offset,
-                ph.p_filesz,
-                data.size()
-            )) {
-                out << "Error: Invalid load segment\n";
-                return out.str();
-            }
-            loads.push_back(ph);
+        if (p.p_type == PT_LOAD) {
+            if (!within(p.p_offset, p.p_filesz, b.size()))
+                return "Error: Invalid PT_LOAD";
+            loads.push_back(p);
         }
 
-        if (ph.p_type == PT_DYNAMIC) {
-            dynamicPH = ph;
-            hasDynamic = true;
+        if (p.p_type == PT_DYNAMIC) {
+            dynamic = p;
+            foundDynamic = true;
         }
     }
 
-    if (!hasDynamic) {
-        out << "Dependencies: No PT_DYNAMIC\n";
+    if (!foundDynamic) {
+        out << "DT_SONAME: None\nDT_NEEDED: None\n";
         return out.str();
     }
 
-    if (!rangeOK(
-        dynamicPH.p_offset,
-        dynamicPH.p_filesz,
-        data.size()
-    )) {
-        out << "Error: Dynamic section out of range\n";
-        return out.str();
+    if (!within(dynamic.p_offset,
+                dynamic.p_filesz, b.size())) {
+        return "Error: Invalid PT_DYNAMIC";
     }
 
-    uint64_t strVirtual = 0;
-    uint64_t strSize = 0;
+    uint64_t strAddr = 0, strSize = 0;
+    uint64_t sonameIndex = 0;
+    bool hasSoname = false;
+    bool terminated = false;
     std::vector<uint64_t> needed;
 
-    uint64_t count =
-        dynamicPH.p_filesz / sizeof(DY);
-
-    bool terminated = false;
-
-    for (uint64_t i = 0; i < count; i++) {
+    uint64_t count = dynamic.p_filesz / sizeof(DY);
+    for (uint64_t i = 0; i < count; ++i) {
         DY d = {};
-
-        if (!readAt(
-            data,
-            uint64_t(dynamicPH.p_offset)
-                + i * sizeof(DY),
-            d
-        )) {
-            out << "Error: Invalid dynamic entry\n";
-            return out.str();
+        if (!get(b, uint64_t(dynamic.p_offset) +
+                     i * sizeof(DY), d)) {
+            return "Error: Invalid dynamic entry";
         }
 
         if (d.d_tag == DT_NULL) {
             terminated = true;
             break;
         }
-
         if (d.d_tag == DT_STRTAB)
-            strVirtual = uint64_t(d.d_un.d_ptr);
-
+            strAddr = uint64_t(d.d_un.d_ptr);
         if (d.d_tag == DT_STRSZ)
             strSize = uint64_t(d.d_un.d_val);
-
         if (d.d_tag == DT_NEEDED)
-            needed.push_back(
-                uint64_t(d.d_un.d_val)
-            );
+            needed.push_back(uint64_t(d.d_un.d_val));
+        if (d.d_tag == DT_SONAME) {
+            sonameIndex = uint64_t(d.d_un.d_val);
+            hasSoname = true;
+        }
     }
 
-    if (!terminated) {
-        out << "Error: Dynamic section not terminated\n";
+    if (!terminated)
+        return "Error: Unterminated dynamic table";
+
+    if (!hasSoname && needed.empty()) {
+        out << "DT_SONAME: None\nDT_NEEDED: None\n";
         return out.str();
     }
 
-    if (needed.empty()) {
-        out << "DT_NEEDED: None\n";
-        return out.str();
-    }
+    if (strAddr == 0 || strSize == 0)
+        return "Error: Missing string table";
 
-    if (strVirtual == 0 || strSize == 0) {
-        out << "Error: Missing dynamic string table\n";
-        return out.str();
-    }
-
+    uint64_t strOff = 0;
     bool mapped = false;
-    uint64_t strOffset = 0;
 
-    for (const PH& ph : loads) {
-        uint64_t vaddr = uint64_t(ph.p_vaddr);
-        uint64_t filesz = uint64_t(ph.p_filesz);
+    for (const PH& p : loads) {
+        uint64_t addr = uint64_t(p.p_vaddr);
+        uint64_t size = uint64_t(p.p_filesz);
+        if (strAddr < addr) continue;
 
-        if (strVirtual < vaddr)
+        uint64_t delta = strAddr - addr;
+        if (delta > size || strSize > size - delta)
             continue;
 
-        uint64_t delta = strVirtual - vaddr;
-
-        if (delta > filesz)
+        uint64_t offset = uint64_t(p.p_offset) + delta;
+        if (!within(offset, strSize, b.size()))
             continue;
 
-        if (strSize > filesz - delta)
-            continue;
-
-        uint64_t off =
-            uint64_t(ph.p_offset) + delta;
-
-        if (!rangeOK(off, strSize, data.size()))
-            continue;
-
-        strOffset = off;
+        strOff = offset;
         mapped = true;
         break;
     }
 
-    if (!mapped) {
-        out << "Error: Cannot map DT_STRTAB\n";
-        return out.str();
-    }
+    if (!mapped)
+        return "Error: Cannot map dynamic strings";
 
-    out << "DT_NEEDED (" << needed.size()
-        << " entries):\n";
-
-    for (uint64_t index : needed) {
-        if (index >= strSize) {
-            out << " - [Invalid string offset]\n";
-            continue;
-        }
-
-        uint64_t start = strOffset + index;
-        uint64_t end = strOffset + strSize;
-
+    auto stringAt = [&](uint64_t index, std::string& s)
+        -> bool {
+        if (index >= strSize) return false;
+        uint64_t start = strOff + index;
+        uint64_t end = strOff + strSize;
         uint64_t pos = start;
+        while (pos < end && b[pos] != 0) ++pos;
+        if (pos == end) return false;
+        s.assign(reinterpret_cast<const char*>(
+                     b.data() + start),
+                 static_cast<size_t>(pos - start));
+        return true;
+    };
 
-        while (pos < end && data[pos] != 0)
-            pos++;
-
-        if (pos == end) {
-            out << " - [Unterminated string]\n";
-            continue;
-        }
-
-        std::string name(
-            reinterpret_cast<const char*>(
-                data.data() + start
-            ),
-            static_cast<size_t>(pos - start)
-        );
-
-        out << " - " << name << "\n";
+    if (hasSoname) {
+        std::string s;
+        if (!stringAt(sonameIndex, s))
+            return "Error: Invalid DT_SONAME";
+        out << "DT_SONAME: " << s << "\n";
+    } else {
+        out << "DT_SONAME: None\n";
     }
 
-    out << "\nInspection only; not executed";
+    if (needed.empty()) {
+        out << "DT_NEEDED: None\n";
+    } else {
+        out << "DT_NEEDED (" << needed.size()
+            << " entries):\n";
+        for (uint64_t index : needed) {
+            std::string s;
+            if (!stringAt(index, s))
+                return "Error: Invalid DT_NEEDED";
+            out << " - " << s << "\n";
+        }
+    }
+
+    out << "Inspection only; not executed";
     return out.str();
 }
 
-static std::string inspectElf(
-    const std::string& path
-) {
-    std::ifstream file(
-        path,
-        std::ios::binary | std::ios::ate
-    );
-
-    if (!file)
-        return "Cannot open file";
+static std::string inspect(const std::string& path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file) return "Error: Cannot open file";
 
     std::streamoff length = file.tellg();
-
-    if (length < 0)
-        return "Cannot determine file size";
-
-    if (length > static_cast<std::streamoff>(MAX_FILE))
-        return "File exceeds 64 MB inspection limit";
+    if (length < 0 || length > 64LL * 1024 * 1024)
+        return "Error: Unsupported file size";
 
     if (length < EI_NIDENT)
-        return "File too small";
-
-    std::vector<uint8_t> data(
-        static_cast<size_t>(length)
-    );
-
-    file.seekg(0);
-
-    if (!file.read(
-        reinterpret_cast<char*>(data.data()),
-        length
-    )) {
-        return "Cannot read file";
-    }
-
-    if (std::memcmp(
-        data.data(),
-        ELFMAG,
-        SELFMAG
-    ) != 0) {
         return "Not an ELF binary";
-    }
 
-    if (data[EI_DATA] != ELFDATA2LSB)
-        return "Unsupported ELF endianness";
+    Bytes b(static_cast<size_t>(length));
+    file.seekg(0);
+    if (!file.read(reinterpret_cast<char*>(b.data()), length))
+        return "Error: Cannot read file";
 
-    if (data[EI_VERSION] != EV_CURRENT)
-        return "Invalid ELF version";
+    if (memcmp(b.data(), ELFMAG, SELFMAG) != 0)
+        return "Not an ELF binary";
 
-    if (data[EI_CLASS] == ELFCLASS64) {
+    if (b[EI_DATA] != ELFDATA2LSB)
+        return "Error: Unsupported endianness";
+
+    if (b[EI_VERSION] != EV_CURRENT)
+        return "Error: Invalid ELF version";
+
+    if (b[EI_CLASS] == ELFCLASS64) {
         Elf64_Ehdr h = {};
-
-        if (!readAt(data, 0, h))
-            return "Invalid ELF64 header";
-
-        if (h.e_ehsize != sizeof(Elf64_Ehdr))
-            return "Invalid ELF64 header size";
-
-        return inspectTyped<
-            Elf64_Ehdr,
-            Elf64_Phdr,
-            Elf64_Dyn
-        >(data, h);
+        if (!get(b, 0, h) || h.e_ehsize != sizeof(h))
+            return "Error: Invalid ELF64 header";
+        return parse<Elf64_Ehdr, Elf64_Phdr, Elf64_Dyn>(b, h);
     }
 
-    if (data[EI_CLASS] == ELFCLASS32) {
+    if (b[EI_CLASS] == ELFCLASS32) {
         Elf32_Ehdr h = {};
-
-        if (!readAt(data, 0, h))
-            return "Invalid ELF32 header";
-
-        if (h.e_ehsize != sizeof(Elf32_Ehdr))
-            return "Invalid ELF32 header size";
-
-        return inspectTyped<
-            Elf32_Ehdr,
-            Elf32_Phdr,
-            Elf32_Dyn
-        >(data, h);
+        if (!get(b, 0, h) || h.e_ehsize != sizeof(h))
+            return "Error: Invalid ELF32 header";
+        return parse<Elf32_Ehdr, Elf32_Phdr, Elf32_Dyn>(b, h);
     }
 
-    return "Unsupported ELF class";
+    return "Error: Unsupported ELF class";
 }
 
-extern "C"
-JNIEXPORT jstring JNICALL
+extern "C" JNIEXPORT jstring JNICALL
 Java_com_titanx_emulator_NativeBridge_nativeInfo(
-    JNIEnv* env, jclass
-) {
-    std::string result =
-        "TitanX Native Core v0.8\n"
-        "Architecture: " + cpuArchitecture() +
-        "\nPointer size: " +
+    JNIEnv* env, jclass) {
+    std::string info =
+        "TitanX Native Core v1.0\n"
+        "Architecture: ARM64 / AArch64\n"
+        "Pointer size: " +
         std::to_string(sizeof(void*) * 8) +
         " bits\nC++ engine: ACTIVE\n"
         "JNI bridge: ACTIVE\n"
-        "ELF dependency inspector: AVAILABLE";
-
-    return env->NewStringUTF(result.c_str());
+        "ELF + SONAME inspector: AVAILABLE";
+    return env->NewStringUTF(info.c_str());
 }
 
-extern "C"
-JNIEXPORT jint JNICALL
+extern "C" JNIEXPORT jint JNICALL
 Java_com_titanx_emulator_NativeBridge_nativeSelfTest(
-    JNIEnv*, jclass
-) {
-    volatile int a = 19;
-    volatile int b = 23;
+    JNIEnv*, jclass) {
+    volatile int a = 19, b = 23;
     return a + b;
 }
 
-extern "C"
-JNIEXPORT jstring JNICALL
+extern "C" JNIEXPORT jstring JNICALL
 Java_com_titanx_emulator_NativeBridge_nativeInspectElf(
-    JNIEnv* env,
-    jclass,
-    jstring jpath
-) {
-    if (jpath == nullptr)
-        return env->NewStringUTF("Null path");
+    JNIEnv* env, jclass, jstring jpath) {
+    if (!jpath) return env->NewStringUTF("Error: Null path");
 
-    const char* raw =
-        env->GetStringUTFChars(jpath, nullptr);
-
-    if (raw == nullptr)
-        return nullptr;
+    const char* raw = env->GetStringUTFChars(jpath, nullptr);
+    if (!raw) return nullptr;
 
     std::string path(raw);
     env->ReleaseStringUTFChars(jpath, raw);
 
-    std::string result = inspectElf(path);
-
+    std::string result = inspect(path);
     return env->NewStringUTF(result.c_str());
 }

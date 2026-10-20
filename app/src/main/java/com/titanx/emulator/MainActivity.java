@@ -187,7 +187,7 @@ public class MainActivity extends Activity {
             "runtime"
         );
 
-        log("TitanX v0.7 started");
+        log("TitanX v0.8 started");
         log("Native ELF inspection available");
         log("Windows execution not integrated");
 
@@ -272,7 +272,7 @@ public class MainActivity extends Activity {
         nav.removeAllViews();
 
         subtitle.setText(
-            "v0.7 • "
+            "v0.8 • "
             + Build.SUPPORTED_ABIS[0]
             + " • "
             + (
@@ -930,7 +930,7 @@ public class MainActivity extends Activity {
 
         note(
             c,
-            "TitanX v0.7 can inspect "
+            "TitanX v0.8 can inspect "
             + "runtime files but cannot "
             + "launch Windows games yet."
         );

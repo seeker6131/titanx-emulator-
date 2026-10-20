@@ -151,7 +151,7 @@ public class MainActivity extends Activity {
                 "titanx", MODE_PRIVATE);
         runtime = new File(getFilesDir(), "runtime");
 
-        log("TitanX v1.8 started");
+        log("TitanX v1.9 started");
         buildLayout();
         page("Dashboard");
     }
@@ -199,7 +199,7 @@ public class MainActivity extends Activity {
         nav.removeAllViews();
 
         subtitle.setText(
-                "v1.8 • " + Build.SUPPORTED_ABIS[0]
+                "v1.9 • " + Build.SUPPORTED_ABIS[0]
                 + " • " + (runtime.isDirectory()
                 ? "Runtime files present"
                 : "Runtime offline"));
@@ -286,6 +286,7 @@ public class MainActivity extends Activity {
         field(e, "WINDOWS PE INSPECTOR", "v1.6");
         field(e, "WINDOWS DLL RESOLVER", "v1.7");
         field(e, "WINDOWS DLL TREE", "v1.8");
+        field(e, "PE EXPORT CHECKER", "v1.9");
 
         field(e, "WINE", "Not integrated");
         field(e, "FEX", "Not integrated");
@@ -310,6 +311,9 @@ public class MainActivity extends Activity {
                 + "not executed.");
 
         if (runtime.isDirectory()) {
+            button(c, "CHECK PE IMPORTS / EXPORTS",
+                    this::exportsAsync);
+
             button(c, "BUILD WINDOWS DLL TREE",
                     this::treeAsync);
 
@@ -347,6 +351,9 @@ public class MainActivity extends Activity {
                     this::verifyManifestAsync);
         }
 
+        button(c, "RUN PE EXPORT SELF-TEST",
+                this::exportsTestAsync);
+
         button(c, "RUN DLL TREE SELF-TEST",
                 this::treeTestAsync);
 
@@ -383,6 +390,28 @@ public class MainActivity extends Activity {
                     this::removeRuntime);
         }
 
+        heading("PE IMPORT / EXPORT CHECKER v1.9");
+        LinearLayout exp = card();
+
+        field(exp, "EXPORT TABLE",
+                "Read named and ordinal exports");
+
+        field(exp, "IMPORT SYMBOLS",
+                "Read imported function names");
+
+        field(exp, "FUNCTION MATCHING",
+                "Check imports against bundled DLL exports");
+
+        field(exp, "ARCHITECTURE",
+                "Compare PE machine architectures");
+
+        field(exp, "REPORT",
+                "FOUND / MISSING / UNVERIFIED");
+
+        note(exp, "Static analysis only. "
+                + "Forwarders and dynamic loading "
+                + "are not resolved.");
+
         heading("WINDOWS DEPENDENCY TREE v1.8");
         LinearLayout tree = card();
 
@@ -405,8 +434,8 @@ public class MainActivity extends Activity {
                 "Copy full dependency tree");
 
         note(tree, "Static analysis only. "
-                + "DLL loader behavior, exported functions "
-                + "and Wine availability are not verified.");
+                + "DLL loader behavior and Wine "
+                + "availability are not verified.");
 
         heading("WINDOWS PE CAPABILITIES");
         LinearLayout pe = card();
@@ -418,6 +447,8 @@ public class MainActivity extends Activity {
         field(pe, "FILE TYPE", "EXE / DLL");
         field(pe, "DLL IMPORTS",
                 "Normal PE Import Directory");
+        field(pe, "EXPORTS",
+                "Named functions and ordinals");
         field(pe, "WINDOWS EXECUTION",
                 "Not available");
 
@@ -466,6 +497,18 @@ public class MainActivity extends Activity {
                 report(title, value);
             });
         }).start();
+    }
+
+    private void exportsAsync() {
+        asyncReport(
+                "TitanX PE Export Checker v1.9",
+                () -> PeExportChecker.analyze(runtime));
+    }
+
+    private void exportsTestAsync() {
+        asyncReport(
+                "TitanX PE Export Self-Test v1.9",
+                PeExportChecker::selfTest);
     }
 
     private void treeAsync() {
@@ -730,6 +773,8 @@ public class MainActivity extends Activity {
                 "Available");
         field(c, "DLL DEPENDENCY TREE",
                 "Available");
+        field(c, "PE IMPORT / EXPORT CHECKER",
+                "Available");
         field(c, "GAME LAUNCHER",
                 "Not implemented");
         field(c, "WINE", "Not integrated");
@@ -737,8 +782,8 @@ public class MainActivity extends Activity {
         field(c, "DXVK", "Not integrated");
 
         note(c,
-                "TitanX v1.8 inspects Windows PE "
-                + "metadata and dependencies. "
+                "TitanX v1.9 inspects Windows PE "
+                + "metadata, dependencies and exports. "
                 + "Windows game execution "
                 + "is not available.");
 

@@ -1,38 +1,25 @@
 
 package com.titanx.emulator;
 
-import android.app.Activity;
-import android.app.ActivityManager;
-import android.app.AlertDialog;
-import android.content.ClipData;
-import android.content.ClipboardManager;
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
+import android.app.*;
+import android.os.*;
+import android.content.*;
 import android.content.pm.PackageManager;
-import android.graphics.Color;
-import android.graphics.Typeface;
+import android.graphics.*;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
-import android.os.Build;
-import android.os.Bundle;
-import android.os.Environment;
-import android.os.StatFs;
-import android.view.Gravity;
-import android.view.View;
+import android.view.*;
 import android.widget.*;
 
 import java.io.*;
-import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+import java.text.SimpleDateFormat;
+import java.util.zip.*;
 
 public class MainActivity extends Activity {
 
     private static final int PICK_ZIP = 101;
-    private static final long MAX_ZIP_BYTES =
-        1024L * 1024L * 1024L;
+    private static final long MAX_BYTES = 1024L * 1024 * 1024;
     private static final int MAX_ENTRIES = 10000;
 
     private final int BG = Color.rgb(10, 15, 26);
@@ -41,561 +28,461 @@ public class MainActivity extends Activity {
     private final int WHITE = Color.WHITE;
     private final int MUTED = Color.rgb(165, 180, 200);
 
-    private LinearLayout root;
-    private LinearLayout content;
-    private LinearLayout navigation;
-    private TextView headerStatus;
-
+    private LinearLayout root, content, nav;
+    private TextView subtitle;
     private SharedPreferences prefs;
-    private File runtimeDir;
-
+    private File runtime;
+    private volatile boolean busy = false;
     private final StringBuilder logs = new StringBuilder();
 
-    private volatile boolean busy = false;
-    private String currentPage = "Dashboard";
-
-    private int dp(int n) {
-        return (int) (n *
-            getResources().getDisplayMetrics().density);
+    private int dp(int v) {
+        return (int)(v * getResources()
+            .getDisplayMetrics().density);
     }
 
-    private GradientDrawable background(
-        int color, int radius
-    ) {
+    private GradientDrawable bg(int color) {
         GradientDrawable d = new GradientDrawable();
         d.setColor(color);
-        d.setCornerRadius(dp(radius));
+        d.setCornerRadius(dp(14));
         return d;
     }
 
-    private TextView text(
-        String value, int size, int color
-    ) {
+    private TextView text(String s, int size, int color) {
         TextView t = new TextView(this);
-        t.setText(value);
+        t.setText(s);
         t.setTextSize(size);
         t.setTextColor(color);
-        t.setIncludeFontPadding(true);
-        t.setLineSpacing(dp(2), 1f);
+        t.setTypeface(Typeface.DEFAULT);
+        t.setLineSpacing(dp(3), 1f);
         return t;
     }
 
-    private void margin(View v, int bottom) {
-        LinearLayout.LayoutParams p =
-            new LinearLayout.LayoutParams(
-                -1, -2
-            );
-        p.bottomMargin = dp(bottom);
-        v.setLayoutParams(p);
+    private void add(LinearLayout p, View v, int gap) {
+        LinearLayout.LayoutParams lp =
+            new LinearLayout.LayoutParams(-1, -2);
+        lp.bottomMargin = dp(gap);
+        p.addView(v, lp);
     }
 
-    private TextView heading(String value) {
-        TextView t = text(value, 19, WHITE);
-        t.setTypeface(null, Typeface.BOLD);
-        margin(t, 12);
-        return t;
+    private LinearLayout card() {
+        LinearLayout c = new LinearLayout(this);
+        c.setOrientation(1);
+        c.setPadding(dp(16), dp(16), dp(16), dp(16));
+        c.setBackground(bg(PANEL));
+        add(content, c, 14);
+        return c;
     }
 
-    private LinearLayout panel() {
-        LinearLayout p = new LinearLayout(this);
-        p.setOrientation(LinearLayout.VERTICAL);
-        p.setPadding(
-            dp(16), dp(16), dp(16), dp(16)
-        );
-        p.setBackground(background(PANEL, 15));
-        margin(p, 14);
-        content.addView(p);
-        return p;
+    private void title(String s) {
+        TextView t = text(s, 19, WHITE);
+        t.setTypeface(Typeface.DEFAULT_BOLD);
+        add(content, t, 12);
     }
 
-    private void line(
-        LinearLayout parent,
-        String label,
-        String value
-    ) {
-        TextView a = text(label, 12, MUTED);
-        parent.addView(a);
-
-        TextView b = text(value, 15, WHITE);
-        b.setPadding(0, dp(3), 0, dp(12));
-        parent.addView(b);
+    private void field(LinearLayout p, String k, String v) {
+        add(p, text(k, 12, MUTED), 3);
+        add(p, text(v, 15, WHITE), 12);
     }
 
-    private Button button(
-        LinearLayout parent,
-        String title,
-        Runnable action
-    ) {
+    private void note(LinearLayout p, String s) {
+        add(p, text(s, 13, MUTED), 10);
+    }
+
+    private void button(LinearLayout p, String s, Runnable r) {
         Button b = new Button(this);
-        b.setText(title);
-        b.setTextColor(BG);
+        b.setText(s);
         b.setAllCaps(false);
-        b.setTextSize(14);
-        b.setTypeface(null, Typeface.BOLD);
-        b.setBackground(background(ACCENT, 12));
-        b.setPadding(dp(12), dp(12), dp(12), dp(12));
-        margin(b, 10);
-        parent.addView(b);
-        b.setOnClickListener(v -> action.run());
-        return b;
+        b.setTextColor(BG);
+        b.setTypeface(Typeface.DEFAULT_BOLD);
+        b.setBackground(bg(ACCENT));
+        add(p, b, 10);
+        b.setOnClickListener(v -> r.run());
     }
 
-    private void info(
-        LinearLayout parent,
-        String message
-    ) {
-        TextView t = text(message, 13, MUTED);
-        t.setPadding(0, dp(5), 0, dp(10));
-        parent.addView(t);
-    }
-
-    private String gb(long n) {
-        return String.format(
-            Locale.US, "%.2f GB",
-            n / 1073741824.0
-        );
+    private String gb(long v) {
+        return String.format(Locale.US, "%.2f GB",
+            v / 1073741824.0);
     }
 
     private void log(String s) {
-        String time = new SimpleDateFormat(
-            "HH:mm:ss", Locale.US
-        ).format(new Date());
-
-        logs.append(time).append(" ")
-            .append(s).append("\n");
-
-        if (logs.length() > 16000) {
+        String tm = new SimpleDateFormat(
+            "HH:mm:ss", Locale.US).format(new Date());
+        logs.append(tm).append(" ").append(s).append("\n");
+        if (logs.length() > 16000)
             logs.delete(0, logs.length() - 12000);
-        }
     }
 
-    private void copy(String value) {
-        ClipboardManager c =
-            (ClipboardManager)
+    private void copy(String s) {
+        ClipboardManager c = (ClipboardManager)
             getSystemService(CLIPBOARD_SERVICE);
-
-        c.setPrimaryClip(
-            ClipData.newPlainText("TitanX", value)
-        );
-
-        Toast.makeText(
-            this, "Copied",
-            Toast.LENGTH_SHORT
-        ).show();
+        c.setPrimaryClip(ClipData.newPlainText("TitanX", s));
+        Toast.makeText(this, "Copied",
+            Toast.LENGTH_SHORT).show();
     }
 
     @Override
     public void onCreate(Bundle state) {
         super.onCreate(state);
 
-        prefs = getSharedPreferences(
-            "titanx", MODE_PRIVATE
-        );
+        getWindow().setStatusBarColor(BG);
+        getWindow().setNavigationBarColor(BG);
+        getWindow().getDecorView().setSystemUiVisibility(0);
 
-        runtimeDir = new File(
-            getFilesDir(), "runtime"
-        );
+        prefs = getSharedPreferences("titanx", MODE_PRIVATE);
+        runtime = new File(getFilesDir(), "runtime");
 
-        log("TitanX v0.4 started");
-        log("Windows execution engine not installed");
+        log("TitanX v0.5 started");
+        log("Native execution is not integrated");
 
-        createLayout();
-        showPage("Dashboard");
+        buildLayout();
+        page("Dashboard");
     }
 
-    private void createLayout() {
+    private void buildLayout() {
         root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
+        root.setOrientation(1);
         root.setBackgroundColor(BG);
 
-        LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.VERTICAL);
-        top.setPadding(
-            dp(18), dp(18), dp(18), dp(14)
-        );
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(1);
+        header.setPadding(dp(18), dp(22), dp(18), dp(14));
 
-        TextView title = text(
-            "TITANX  /  EMULATOR",
-            22, WHITE
-        );
-        title.setTypeface(null, Typeface.BOLD);
-        top.addView(title);
+        TextView brand = text("TITANX / EMULATOR", 21, WHITE);
+        brand.setTypeface(Typeface.DEFAULT_BOLD);
+        add(header, brand, 4);
 
-        headerStatus = text(
-            "v0.4  •  ARM64  •  Runtime offline",
-            12, ACCENT
-        );
-        top.addView(headerStatus);
-        root.addView(top);
+        subtitle = text("", 12, ACCENT);
+        add(header, subtitle, 0);
+        root.addView(header);
 
         ScrollView scroll = new ScrollView(this);
-        scroll.setFillViewport(true);
-
         content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-        content.setPadding(
-            dp(16), dp(12), dp(16), dp(20)
-        );
-
+        content.setOrientation(1);
+        content.setPadding(dp(16), dp(12), dp(16), dp(20));
         scroll.addView(content);
 
-        root.addView(
-            scroll,
-            new LinearLayout.LayoutParams(
-                -1, 0, 1f
-            )
-        );
+        root.addView(scroll,
+            new LinearLayout.LayoutParams(-1, 0, 1));
 
-        navigation = new LinearLayout(this);
-        navigation.setOrientation(
-            LinearLayout.HORIZONTAL
-        );
-        navigation.setPadding(
-            dp(6), dp(8), dp(6), dp(8)
-        );
-        navigation.setBackgroundColor(PANEL);
+        nav = new LinearLayout(this);
+        nav.setBackgroundColor(PANEL);
+        nav.setPadding(dp(4), dp(7), dp(4), dp(7));
+        root.addView(nav);
 
-        root.addView(navigation);
         setContentView(root);
     }
 
-    private void showPage(String name) {
-        currentPage = name;
+    private void page(String name) {
         content.removeAllViews();
-        navigation.removeAllViews();
+        nav.removeAllViews();
 
-        String[] pages = {
-            "Dashboard", "Runtime",
-            "Games", "Settings"
-        };
-
-        for (String page : pages) {
-            TextView tab = text(
-                page, 12,
-                page.equals(name) ? ACCENT : MUTED
-            );
-            tab.setGravity(Gravity.CENTER);
-            tab.setPadding(
-                dp(2), dp(14), dp(2), dp(14)
-            );
-            if (page.equals(name)) {
-                tab.setTypeface(null, Typeface.BOLD);
-            }
-            navigation.addView(
-                tab,
-                new LinearLayout.LayoutParams(
-                    0, -2, 1f
-                )
-            );
-            tab.setOnClickListener(v -> showPage(page));
-        }
-
-        updateHeader();
-
-        if (name.equals("Dashboard")) {
-            dashboard();
-        } else if (name.equals("Runtime")) {
-            runtimePage();
-        } else if (name.equals("Games")) {
-            gamesPage();
-        } else {
-            settingsPage();
-        }
-    }
-
-    private void updateHeader() {
-        headerStatus.setText(
-            "v0.4  •  "
+        subtitle.setText("v0.5 • "
             + Build.SUPPORTED_ABIS[0]
-            + "  •  "
-            + (runtimeDir.isDirectory()
-                ? "Files imported"
-                : "Runtime offline")
-        );
+            + " • " + (runtime.isDirectory()
+            ? "Runtime files present" : "Runtime offline"));
+
+        for (String item : new String[]{
+            "Dashboard", "Runtime", "Games", "Settings"
+        }) {
+            TextView t = text(item, 12,
+                item.equals(name) ? ACCENT : MUTED);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, dp(15), 0, dp(15));
+            nav.addView(t,
+                new LinearLayout.LayoutParams(0, -2, 1));
+            t.setOnClickListener(v -> page(item));
+        }
+
+        if (name.equals("Dashboard")) dashboard();
+        if (name.equals("Runtime")) runtimePage();
+        if (name.equals("Games")) games();
+        if (name.equals("Settings")) settings();
     }
 
     private void dashboard() {
-        content.addView(heading("DEVICE DASHBOARD"));
+        title("DEVICE DASHBOARD");
+        LinearLayout c = card();
 
-        ActivityManager am =
-            (ActivityManager)
-            getSystemService(
-                Context.ACTIVITY_SERVICE
-            );
-
-        ActivityManager.MemoryInfo mem =
+        ActivityManager am = (ActivityManager)
+            getSystemService(ACTIVITY_SERVICE);
+        ActivityManager.MemoryInfo mi =
             new ActivityManager.MemoryInfo();
-        am.getMemoryInfo(mem);
+        am.getMemoryInfo(mi);
 
-        StatFs fs = new StatFs(
-            Environment.getDataDirectory()
-                .getAbsolutePath()
-        );
-
-        boolean vulkan =
-            getPackageManager().hasSystemFeature(
-                PackageManager
-                    .FEATURE_VULKAN_HARDWARE_VERSION
-            );
-
-        LinearLayout device = panel();
-
-        line(device, "DEVICE",
+        field(c, "DEVICE",
             Build.MANUFACTURER + " " + Build.MODEL);
-
-        line(device, "ANDROID",
-            Build.VERSION.RELEASE
-            + " / API " + Build.VERSION.SDK_INT);
-
-        line(device, "CPU ARCHITECTURE",
+        field(c, "ANDROID",
+            Build.VERSION.RELEASE + " / API "
+            + Build.VERSION.SDK_INT);
+        field(c, "ARCHITECTURES",
             Arrays.toString(Build.SUPPORTED_ABIS));
+        field(c, "RAM",
+            gb(mi.availMem) + " free / "
+            + gb(mi.totalMem) + " total");
 
-        line(device, "RAM",
-            gb(mem.availMem) + " available / "
-            + gb(mem.totalMem) + " total");
+        boolean vulkan = getPackageManager()
+            .hasSystemFeature(
+                PackageManager.FEATURE_VULKAN_HARDWARE_VERSION);
+        field(c, "VULKAN",
+            vulkan ? "Advertised" : "Not advertised");
 
-        line(device, "STORAGE",
-            gb(fs.getAvailableBytes()) + " free");
-
-        line(device, "VULKAN",
-            vulkan
-                ? "Advertised by Android"
-                : "Not advertised");
-
-        content.addView(heading("ENGINE STATUS"));
-
-        LinearLayout engine = panel();
-
-        line(engine, "WINE", "Not integrated");
-        line(engine, "FEX / BOX64", "Not integrated");
-        line(engine, "DXVK / TURNIP", "Not integrated");
-        line(engine, "GAME LAUNCHER", "Not available");
-
-        button(engine, "OPEN RUNTIME MANAGER",
-            () -> showPage("Runtime"));
-
-        info(content,
-            "TitanX currently manages runtime files "
-            + "and device diagnostics. It cannot "
-            + "execute Windows programs yet.");
+        title("ENGINE READINESS");
+        LinearLayout e = card();
+        field(e, "WINE", "Not integrated");
+        field(e, "FEX / BOX64", "Not integrated");
+        field(e, "DXVK / TURNIP", "Not integrated");
+        field(e, "NATIVE EXECUTION", "Unavailable");
+        button(e, "INSPECT RUNTIME", () -> page("Runtime"));
     }
 
-    private long[] scan(File dir) {
-        long files = 0;
+    private static class Scan {
+        int files = 0;
+        int elf = 0;
+        int arm64 = 0;
+        int arm32 = 0;
+        int x86 = 0;
+        int x64 = 0;
+        int unknown = 0;
+        int libraries = 0;
+        int wineNames = 0;
+        int fexNames = 0;
+        int boxNames = 0;
         long bytes = 0;
+        ArrayList<String> samples = new ArrayList<>();
+    }
+
+    private String elfArch(File f) {
+        byte[] h = new byte[20];
+
+        try (FileInputStream in = new FileInputStream(f)) {
+            int offset = 0;
+            while (offset < h.length) {
+                int n = in.read(h, offset, h.length - offset);
+                if (n < 0) return "Unknown";
+                offset += n;
+            }
+
+            if ((h[0] & 255) != 127
+                || h[1] != 'E'
+                || h[2] != 'L'
+                || h[3] != 'F') return "Not ELF";
+
+            int machine;
+            if (h[5] == 1)
+                machine = (h[18] & 255)
+                    | ((h[19] & 255) << 8);
+            else if (h[5] == 2)
+                machine = ((h[18] & 255) << 8)
+                    | (h[19] & 255);
+            else return "Unknown";
+
+            if (machine == 183 && h[4] == 2)
+                return "ARM64";
+            if (machine == 40 && h[4] == 1)
+                return "ARM32";
+            if (machine == 3 && h[4] == 1)
+                return "x86";
+            if (machine == 62 && h[4] == 2)
+                return "x86-64";
+            return "Other ELF";
+
+        } catch (IOException ex) {
+            return "Unreadable";
+        }
+    }
+
+    private void inspect(File dir, Scan s, int depth) {
+        if (depth > 32 || s.files > 20000) return;
 
         File[] children = dir.listFiles();
-        if (children == null) {
-            return new long[]{0, 0};
-        }
+        if (children == null) return;
 
         for (File f : children) {
+            if (s.files > 20000) break;
+
             if (f.isDirectory()) {
-                long[] s = scan(f);
-                files += s[0];
-                bytes += s[1];
-            } else {
-                files++;
-                bytes += f.length();
+                inspect(f, s, depth + 1);
+                continue;
+            }
+
+            s.files++;
+            s.bytes += f.length();
+
+            String n = f.getName().toLowerCase(Locale.US);
+            if (n.endsWith(".so")) s.libraries++;
+
+            if (n.equals("wine") || n.equals("wine64")
+                || n.equals("wineserver")) s.wineNames++;
+            if (n.startsWith("fex")) s.fexNames++;
+            if (n.startsWith("box64")
+                || n.startsWith("box86")) s.boxNames++;
+
+            String arch = elfArch(f);
+
+            if (!arch.equals("Not ELF")) {
+                if (arch.equals("ARM64")) s.arm64++;
+                else if (arch.equals("ARM32")) s.arm32++;
+                else if (arch.equals("x86")) s.x86++;
+                else if (arch.equals("x86-64")) s.x64++;
+                else s.unknown++;
+
+                s.elf++;
+
+                if (s.samples.size() < 12)
+                    s.samples.add(f.getName() + " : " + arch);
             }
         }
-
-        return new long[]{files, bytes};
     }
 
     private void runtimePage() {
-        content.addView(heading("RUNTIME MANAGER"));
+        title("NATIVE RUNTIME INSPECTOR");
 
-        LinearLayout p = panel();
+        LinearLayout c = card();
 
-        if (runtimeDir.isDirectory()) {
-            long[] s = scan(runtimeDir);
-
-            line(p, "FILES IMPORTED",
-                String.valueOf(s[0]));
-            line(p, "TOTAL SIZE", gb(s[1]));
-            line(p, "VALIDATION",
-                "ZIP extraction completed");
-            line(p, "EXECUTION",
-                "Not integrated");
-
-            info(p,
-                "Imported files are not proof that "
-                + "Wine or FEX is compatible.");
+        if (!runtime.isDirectory()) {
+            field(c, "STATUS", "No runtime imported");
         } else {
-            line(p, "STATUS", "No runtime imported");
+            field(c, "STATUS", "Imported files present");
+            note(c, "Inspecting files does not execute them.");
+            button(c, "SCAN RUNTIME FILES",
+                this::scanAsync);
         }
 
-        button(p, "IMPORT RUNTIME ZIP",
-            this::pickZip);
+        button(c, "IMPORT RUNTIME ZIP", this::pickZip);
+        button(c, "REMOVE RUNTIME", this::removeRuntime);
 
-        button(p, "REFRESH STATUS",
-            () -> showPage("Runtime"));
-
-        button(p, "REMOVE RUNTIME",
-            this::confirmRemove);
-
-        LinearLayout validation = panel();
-        line(validation, "ZIP SECURITY",
-            "Path traversal protection enabled");
-        line(validation, "EXTRACTED DATA LIMIT",
-            "1 GB");
-        line(validation, "ENTRY LIMIT",
-            "10,000");
-        line(validation, "EXECUTABLE VALIDATION",
-            "Not implemented");
-
-        info(content,
-            "Import ZIP files only from sources "
-            + "you trust. No Windows executable "
-            + "will be launched by this version.");
+        LinearLayout v = card();
+        field(v, "ELF INSPECTION",
+            "Reads binary headers only");
+        field(v, "SUPPORTED IDENTIFICATION",
+            "ARM64 / ARM32 / x86 / x86-64");
+        field(v, "ZIP EXTRACTION LIMIT", "1 GB");
+        field(v, "ENGINE EXECUTION", "Not implemented");
+        note(v, "A valid ELF header does not guarantee "
+            + "that a binary can run on Android.");
     }
 
-    private void gamesPage() {
-        content.addView(heading("GAME LIBRARY"));
+    private void scanAsync() {
+        if (busy) return;
+        busy = true;
 
-        LinearLayout p = panel();
+        new Thread(() -> {
+            Scan s = new Scan();
+            inspect(runtime, s, 0);
 
-        line(p, "LIBRARY STATUS",
-            "Windows game launching unavailable");
+            StringBuilder result = new StringBuilder();
+            result.append("Files: ").append(s.files);
+            result.append("\nSize: ").append(gb(s.bytes));
+            result.append("\nELF files: ").append(s.elf);
+            result.append("\nARM64: ").append(s.arm64);
+            result.append("\nARM32: ").append(s.arm32);
+            result.append("\nx86: ").append(s.x86);
+            result.append("\nx86-64: ").append(s.x64);
+            result.append("\nOther/unknown ELF: ")
+                .append(s.unknown);
+            result.append("\n.so filenames: ")
+                .append(s.libraries);
+            result.append("\nWine-related filenames: ")
+                .append(s.wineNames);
+            result.append("\nFEX-related filenames: ")
+                .append(s.fexNames);
+            result.append("\nBox-related filenames: ")
+                .append(s.boxNames);
+            result.append("\n\nELF samples:\n");
 
-        info(p,
-            "This page is reserved for a future "
-            + "game library. Runtime execution, "
-            + "Windows filesystem integration, "
-            + "and graphics translation must "
-            + "be implemented first.");
+            for (String x : s.samples)
+                result.append(x).append("\n");
 
-        line(p, "ENGINE",
-            "Not integrated");
+            String report = result.toString();
 
-        line(p, "COMPATIBILITY",
-            "Not tested");
+            runOnUiThread(() -> {
+                busy = false;
+                log("Runtime scan completed");
+                new AlertDialog.Builder(this)
+                    .setTitle("Native Runtime Report")
+                    .setMessage(report)
+                    .setPositiveButton("OK", null)
+                    .setNeutralButton("COPY",
+                        (d, w) -> copy(report))
+                    .show();
+            });
+        }).start();
     }
 
-    private void settingsPage() {
-        content.addView(heading("SETTINGS"));
+    private void games() {
+        title("GAME LIBRARY");
+        LinearLayout c = card();
+        field(c, "WINDOWS EXECUTION", "Not available");
+        note(c, "TitanX does not yet include a "
+            + "Wine/FEX execution pipeline.");
+    }
 
-        LinearLayout p = panel();
-
-        line(p, "PERFORMANCE PROFILE",
-            "Stored preference only");
+    private void settings() {
+        title("SETTINGS");
+        LinearLayout c = card();
 
         String[] profiles = {
-            "Balanced",
-            "Low RAM 8GB",
-            "Performance"
+            "Balanced", "Low RAM 8GB", "Performance"
         };
 
-        Spinner spinner = new Spinner(this);
-        ArrayAdapter<String> adapter =
-            new ArrayAdapter<>(
-                this,
-                android.R.layout
-                    .simple_spinner_dropdown_item,
-                profiles
-            );
-        spinner.setAdapter(adapter);
-        spinner.setSelection(
-            Math.max(0, Math.min(
-                2, prefs.getInt("profile", 1)
-            ))
-        );
-        p.addView(spinner);
+        Spinner sp = new Spinner(this);
+        ArrayAdapter<String> adapter = new ArrayAdapter<>(
+            this,
+            android.R.layout.simple_spinner_dropdown_item,
+            profiles);
+        sp.setAdapter(adapter);
+        sp.setSelection(Math.max(0, Math.min(2,
+            prefs.getInt("profile", 1))));
+        add(c, sp, 10);
 
-        button(p, "SAVE PROFILE", () -> {
-            int selected =
-                spinner.getSelectedItemPosition();
-
-            prefs.edit()
-                .putInt("profile", selected)
-                .apply();
-
-            log("Profile: " + profiles[selected]);
-
-            Toast.makeText(
-                this, "Profile saved",
-                Toast.LENGTH_SHORT
-            ).show();
+        button(c, "SAVE PROFILE", () -> {
+            int n = sp.getSelectedItemPosition();
+            prefs.edit().putInt("profile", n).apply();
+            log("Profile saved: " + profiles[n]);
+            Toast.makeText(this, "Saved",
+                Toast.LENGTH_SHORT).show();
         });
 
-        info(p,
-            "Profiles do not change CPU, GPU, "
-            + "RAM limits, or runtime settings yet.");
+        note(c, "Profiles are saved preferences only.");
 
-        content.addView(heading("SESSION LOG"));
-
-        LinearLayout logPanel = panel();
-        TextView logText = text(
-            logs.toString(), 12, WHITE
-        );
-        logPanel.addView(logText);
-
-        button(logPanel, "COPY LOG",
-            () -> copy(logs.toString()));
-
-        button(logPanel, "CLEAR LOG", () -> {
+        title("SESSION LOG");
+        LinearLayout l = card();
+        add(l, text(logs.toString(), 12, WHITE), 12);
+        button(l, "COPY LOG", () -> copy(logs.toString()));
+        button(l, "CLEAR LOG", () -> {
             logs.setLength(0);
             log("Log cleared");
-            showPage("Settings");
-        });
-
-        button(logPanel, "COPY DIAGNOSTICS", () -> {
-            String d = Build.MODEL
-                + "\nAndroid: " + Build.VERSION.RELEASE
-                + "\nABIs: "
-                + Arrays.toString(Build.SUPPORTED_ABIS);
-            copy(d);
+            page("Settings");
         });
     }
 
     private void pickZip() {
-        if (busy) {
-            Toast.makeText(
-                this, "Operation in progress",
-                Toast.LENGTH_SHORT
-            ).show();
-            return;
-        }
+        if (busy) return;
 
-        Intent i = new Intent(
-            Intent.ACTION_OPEN_DOCUMENT
-        );
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         i.setType("*/*");
         i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.addFlags(
-            Intent.FLAG_GRANT_READ_URI_PERMISSION
-        );
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         startActivityForResult(i, PICK_ZIP);
     }
 
     @Override
     protected void onActivityResult(
-        int requestCode,
-        int resultCode,
-        Intent data
+        int request, int result, Intent data
     ) {
-        super.onActivityResult(
-            requestCode, resultCode, data
-        );
+        super.onActivityResult(request, result, data);
 
-        if (requestCode != PICK_ZIP
-            || resultCode != RESULT_OK
-            || data == null
-            || data.getData() == null) {
+        if (request != PICK_ZIP || result != RESULT_OK
+            || data == null || data.getData() == null)
             return;
-        }
 
         Uri uri = data.getData();
 
         new AlertDialog.Builder(this)
-            .setTitle("Import Runtime ZIP")
-            .setMessage(
-                "Extract the selected ZIP into "
-                + "TitanX private storage?\n\n"
-                + "Existing files will be replaced "
-                + "only after extraction succeeds."
-            )
+            .setTitle("Import ZIP")
+            .setMessage("Extract selected ZIP into "
+                + "private app storage? Use only "
+                + "files from trusted sources.")
             .setNegativeButton("CANCEL", null)
             .setPositiveButton("IMPORT",
                 (d, w) -> importZip(uri))
@@ -605,171 +492,123 @@ public class MainActivity extends Activity {
     private void importZip(Uri uri) {
         if (busy) return;
         busy = true;
-        log("Import started");
+        log("ZIP import started");
 
         new Thread(() -> {
             File stage = new File(
-                getFilesDir(), "runtime_staging"
-            );
+                getFilesDir(), "runtime_staging");
             File backup = new File(
-                getFilesDir(), "runtime_backup"
-            );
-
-            String result;
+                getFilesDir(), "runtime_backup");
+            String message;
 
             try {
                 if (!deleteTree(stage)
                     || !deleteTree(backup)
-                    || !stage.mkdirs()) {
+                    || !stage.mkdirs())
                     throw new IOException(
-                        "Cannot prepare directories"
-                    );
-                }
+                        "Cannot prepare directories");
 
-                extractZip(uri, stage);
+                extract(uri, stage);
 
-                boolean hadOld = runtimeDir.exists();
+                boolean old = runtime.exists();
 
-                if (hadOld
-                    && !runtimeDir.renameTo(backup)) {
+                if (old && !runtime.renameTo(backup))
                     throw new IOException(
-                        "Cannot back up old runtime"
-                    );
-                }
+                        "Cannot back up runtime");
 
-                if (!stage.renameTo(runtimeDir)) {
-                    if (hadOld) {
-                        backup.renameTo(runtimeDir);
-                    }
+                if (!stage.renameTo(runtime)) {
+                    if (old) backup.renameTo(runtime);
                     throw new IOException(
-                        "Cannot activate imported files"
-                    );
+                        "Cannot activate runtime");
                 }
 
                 deleteTree(backup);
-                result = "Runtime files imported";
+                message = "Runtime imported";
 
-            } catch (Exception e) {
+            } catch (Exception ex) {
                 deleteTree(stage);
-                result = "Import failed: "
-                    + e.getMessage();
+                message = "Import failed: "
+                    + ex.getMessage();
             }
 
-            final String message = result;
-
+            final String m = message;
             runOnUiThread(() -> {
                 busy = false;
-                log(message);
-                Toast.makeText(
-                    this, message,
-                    Toast.LENGTH_LONG
-                ).show();
-                showPage("Runtime");
+                log(m);
+                Toast.makeText(this, m,
+                    Toast.LENGTH_LONG).show();
+                page("Runtime");
             });
         }).start();
     }
 
-    private void extractZip(
-        Uri uri, File destination
-    ) throws IOException {
+    private void extract(Uri uri, File dest)
+        throws IOException {
 
-        String base =
-            destination.getCanonicalPath()
+        String base = dest.getCanonicalPath()
             + File.separator;
+        int entries = 0;
+        long bytes = 0;
 
-        int count = 0;
-        long total = 0;
+        InputStream input = getContentResolver()
+            .openInputStream(uri);
 
-        InputStream source =
-            getContentResolver().openInputStream(uri);
+        if (input == null)
+            throw new IOException("Cannot open ZIP");
 
-        if (source == null) {
-            throw new IOException(
-                "Cannot open selected file"
-            );
-        }
+        try (ZipInputStream zip = new ZipInputStream(
+                new BufferedInputStream(input))) {
 
-        try (
-            InputStream input = source;
-            ZipInputStream zip = new ZipInputStream(
-                new BufferedInputStream(input)
-            )
-        ) {
-            ZipEntry entry;
+            ZipEntry e;
             byte[] buffer = new byte[32768];
 
-            while ((entry = zip.getNextEntry())
-                    != null) {
-                count++;
-
-                if (count > MAX_ENTRIES) {
+            while ((e = zip.getNextEntry()) != null) {
+                if (++entries > MAX_ENTRIES)
                     throw new IOException(
-                        "Too many ZIP entries"
-                    );
-                }
+                        "Too many entries");
 
-                String name = entry.getName();
+                String name = e.getName();
 
                 if (name.isEmpty()
                     || name.startsWith("/")
                     || name.startsWith("\\")
                     || name.contains("\\")
-                    || name.indexOf('\0') >= 0) {
+                    || name.indexOf('\0') >= 0)
                     throw new IOException(
-                        "Unsafe ZIP entry"
-                    );
-                }
+                        "Unsafe entry name");
 
-                File target = new File(
-                    destination, name
-                );
+                File target = new File(dest, name);
 
-                String path = target.getCanonicalPath();
-
-                if (!path.startsWith(base)) {
+                if (!target.getCanonicalPath()
+                    .startsWith(base))
                     throw new IOException(
-                        "ZIP path traversal blocked"
-                    );
-                }
+                        "Path traversal blocked");
 
-                if (entry.isDirectory()) {
+                if (e.isDirectory()) {
                     if (!target.isDirectory()
-                        && !target.mkdirs()) {
+                        && !target.mkdirs())
                         throw new IOException(
-                            "Cannot create directory"
-                        );
-                    }
+                            "Directory creation failed");
                 } else {
                     File parent = target.getParentFile();
-
                     if (!parent.isDirectory()
-                        && !parent.mkdirs()) {
+                        && !parent.mkdirs())
                         throw new IOException(
-                            "Cannot create parent"
-                        );
-                    }
+                            "Parent creation failed");
 
-                    if (target.exists()) {
+                    if (target.exists())
                         throw new IOException(
-                            "Duplicate ZIP path"
-                        );
-                    }
+                            "Duplicate entry");
 
                     try (OutputStream out =
                         new BufferedOutputStream(
-                            new FileOutputStream(target)
-                        )) {
+                            new FileOutputStream(target))) {
                         int n;
-
                         while ((n = zip.read(buffer)) != -1) {
-                            total += n;
-
-                            if (total > MAX_ZIP_BYTES) {
+                            bytes += n;
+                            if (bytes > MAX_BYTES)
                                 throw new IOException(
-                                    "ZIP exceeds 1 GB"
-                                );
-                            }
-
+                                    "ZIP exceeds 1 GB");
                             out.write(buffer, 0, n);
                         }
                     }
@@ -779,57 +618,41 @@ public class MainActivity extends Activity {
             }
         }
 
-        if (count == 0) {
-            throw new IOException(
-                "Empty or invalid ZIP"
-            );
-        }
+        if (entries == 0)
+            throw new IOException("Empty ZIP");
     }
 
-    private boolean deleteTree(File file) {
-        if (!file.exists()) return true;
+    private boolean deleteTree(File f) {
+        if (!f.exists()) return true;
 
-        if (file.isDirectory()) {
-            File[] children = file.listFiles();
+        if (f.isDirectory()) {
+            File[] children = f.listFiles();
             if (children == null) return false;
 
-            for (File child : children) {
-                if (!deleteTree(child)) {
-                    return false;
-                }
-            }
+            for (File child : children)
+                if (!deleteTree(child)) return false;
         }
 
-        return file.delete();
+        return f.delete();
     }
 
-    private void confirmRemove() {
-        if (busy) {
-            Toast.makeText(
-                this, "Operation in progress",
-                Toast.LENGTH_SHORT
-            ).show();
-            return;
-        }
+    private void removeRuntime() {
+        if (busy) return;
 
         new AlertDialog.Builder(this)
             .setTitle("Remove Runtime")
-            .setMessage(
-                "Delete imported runtime files?"
-            )
+            .setMessage("Delete imported files?")
             .setNegativeButton("CANCEL", null)
             .setPositiveButton("DELETE", (d, w) -> {
                 busy = true;
 
                 new Thread(() -> {
-                    boolean ok = deleteTree(runtimeDir);
-
+                    boolean ok = deleteTree(runtime);
                     runOnUiThread(() -> {
                         busy = false;
-                        log(ok
-                            ? "Runtime removed"
-                            : "Runtime removal failed");
-                        showPage("Runtime");
+                        log(ok ? "Runtime removed"
+                            : "Removal failed");
+                        page("Runtime");
                     });
                 }).start();
             })

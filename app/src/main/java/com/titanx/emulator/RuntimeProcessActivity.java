@@ -10,7 +10,6 @@ import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.view.Gravity;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -29,19 +28,21 @@ public class RuntimeProcessActivity extends Activity {
     private static final int BG = 0xff0a0f1a;
     private static final int PANEL = 0xff182131;
     private static final int GREEN = 0xff36ceb1;
-    private static final int MUTED = 0xffa5b4c8;
     private static final long MAX_ZIP_BYTES = 1073741824L;
     private static final int MAX_FILES = 10000;
+    private static final String TEST_ASSET =
+        "runtime/titanx_x64_test";
+    private static final String EXPECTED =
+        "CPU TEST PASS";
 
     private LinearLayout content;
-    private ScrollView scroll;
     private TextView status;
     private TextView output;
     private File runtimeDir;
     private volatile boolean busy = false;
 
-    private int dp(int n) {
-        return (int) (n *
+    private int dp(int value) {
+        return (int) (value *
             getResources().getDisplayMetrics().density);
     }
 
@@ -52,12 +53,13 @@ public class RuntimeProcessActivity extends Activity {
         return d;
     }
 
-    private TextView label(String value, int size, int color) {
+    private TextView label(
+        String value, int size, int color
+    ) {
         TextView t = new TextView(this);
         t.setText(value);
         t.setTextSize(size);
         t.setTextColor(color);
-        t.setTypeface(Typeface.DEFAULT);
         t.setPadding(0, dp(5), 0, dp(8));
         return t;
     }
@@ -75,8 +77,12 @@ public class RuntimeProcessActivity extends Activity {
         return c;
     }
 
-    private void line(LinearLayout parent, String value) {
-        parent.addView(label(value, 14, Color.WHITE));
+    private void line(
+        LinearLayout parent, String value
+    ) {
+        parent.addView(
+            label(value, 14, Color.WHITE)
+        );
     }
 
     private void button(
@@ -94,12 +100,14 @@ public class RuntimeProcessActivity extends Activity {
         LinearLayout.LayoutParams p =
             new LinearLayout.LayoutParams(-1, dp(54));
         p.bottomMargin = dp(12);
-
         parent.addView(b, p);
+
         b.setOnClickListener(v -> action.run());
     }
 
-    private void dialog(String title, String message) {
+    private void dialog(
+        String title, String message
+    ) {
         new AlertDialog.Builder(this)
             .setTitle(title)
             .setMessage(message)
@@ -114,13 +122,17 @@ public class RuntimeProcessActivity extends Activity {
         getWindow().setStatusBarColor(BG);
         getWindow().setNavigationBarColor(BG);
 
-        runtimeDir = new File(getFilesDir(), "runtime_v22");
+        runtimeDir = new File(
+            getFilesDir(), "runtime_v22"
+        );
 
-        LinearLayout root = new LinearLayout(this);
+        LinearLayout root =
+            new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(BG);
 
-        scroll = new ScrollView(this);
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(true);
 
         content = new LinearLayout(this);
         content.setOrientation(LinearLayout.VERTICAL);
@@ -139,108 +151,165 @@ public class RuntimeProcessActivity extends Activity {
         content.removeAllViews();
 
         content.addView(label(
-            "TITANX / EMULATOR", 24, Color.WHITE
+            "TITANX / EMULATOR",
+            24, Color.WHITE
         ));
 
         content.addView(label(
-            "v2.4 • Box64 Execution Test", 13, GREEN
+            "v2.5.1 • X86-64 CPU Execution",
+            13, GREEN
         ));
 
         LinearLayout device = card();
         line(device, "DEVICE: " + Build.MODEL);
-        line(device, "ABI: " + Build.SUPPORTED_ABIS[0]);
-        line(device, "ANDROID: " + Build.VERSION.RELEASE);
+        line(device, "ABI: " +
+            Build.SUPPORTED_ABIS[0]);
+        line(device, "ANDROID: " +
+            Build.VERSION.RELEASE);
 
         LinearLayout engine = card();
         line(engine, "NATIVE PROCESS ENGINE");
 
-        status = label("STATUS: READY", 15, GREEN);
+        status = label(
+            "STATUS: READY", 15, GREEN
+        );
         engine.addView(status);
 
-        button(engine, "RUN NATIVE PROCESS TEST",
+        button(
+            engine,
+            "RUN NATIVE PROCESS TEST",
             () -> runCommand(
                 "ANDROID NATIVE TEST",
                 new String[]{"/system/bin/id"},
+                false,
                 false
             )
         );
 
-        button(engine, "CHECK ANDROID ENVIRONMENT",
+        button(
+            engine,
+            "CHECK ANDROID ENVIRONMENT",
             () -> runCommand(
                 "ANDROID ENVIRONMENT",
                 new String[]{
                     "/system/bin/getprop",
                     "ro.product.cpu.abi"
                 },
+                false,
                 false
             )
         );
 
-        button(engine, "TEST JNI ENGINE",
-            () -> dialog("TitanX JNI", NativeBridge.report())
+        button(
+            engine,
+            "TEST JNI ENGINE",
+            () -> dialog(
+                "TitanX JNI",
+                NativeBridge.report()
+            )
         );
 
         LinearLayout box = card();
 
         line(box, "BOX64 EXECUTION ENGINE");
-        line(box, "Source: APK native library directory");
+        line(box, "Source: APK native libraries");
 
         File binary = getBox64File();
 
-        line(box, "Box64 file: " +
-            (binary.isFile() ? "FOUND" : "NOT FOUND"));
+        line(box, "Box64: " +
+            (binary.isFile()
+                ? "FOUND"
+                : "NOT FOUND"));
 
-        line(box, "File size: " +
-            (binary.isFile() ? binary.length() : 0)
+        line(box, "Size: " +
+            (binary.isFile()
+                ? binary.length() : 0)
             + " bytes");
 
-        button(box, "CHECK EMBEDDED BOX64",
+        button(
+            box,
+            "CHECK EMBEDDED BOX64",
             this::inspectBox64
         );
 
-        button(box, "RUN BOX64 VERSION TEST",
+        button(
+            box,
+            "RUN BOX64 VERSION TEST",
             this::runBox64
         );
 
-        button(box, "SHOW BOX64 FILE PATH",
+        button(
+            box,
+            "SHOW BOX64 FILE PATH",
             () -> dialog(
                 "Box64 Location",
                 getBox64File().getAbsolutePath()
             )
         );
 
+        LinearLayout cpu = card();
+
+        line(cpu, "X86-64 CPU TEST");
+        line(cpu, "Architecture: Linux x86-64");
+        line(cpu, "Execution: Box64 Dynarec");
+        line(cpu, "Expected: 1111111110");
+
+        button(
+            cpu,
+            "CHECK X86-64 TEST PROGRAM",
+            this::inspectX64Test
+        );
+
+        button(
+            cpu,
+            "RUN X86-64 CPU TEST",
+            this::runX64Test
+        );
+
         LinearLayout runtime = card();
 
         line(runtime, "RUNTIME PACKAGE MANAGER");
         line(runtime, "Storage:");
-        line(runtime, runtimeDir.getAbsolutePath());
+        line(
+            runtime,
+            runtimeDir.getAbsolutePath()
+        );
 
-        line(runtime,
+        line(
+            runtime,
             runtimeDir.isDirectory()
                 ? "PACKAGE: IMPORTED"
                 : "PACKAGE: NOT IMPORTED"
         );
 
-        button(runtime, "IMPORT RUNTIME ZIP",
+        button(
+            runtime,
+            "IMPORT RUNTIME ZIP",
             this::pickZip
         );
 
-        button(runtime, "SCAN INSTALLED COMPONENTS",
+        button(
+            runtime,
+            "SCAN INSTALLED COMPONENTS",
             this::scanRuntime
         );
 
-        button(runtime, "CHECK RUNTIME READINESS",
+        button(
+            runtime,
+            "CHECK RUNTIME READINESS",
             this::checkReadiness
         );
 
-        button(runtime, "REMOVE RUNTIME PACKAGE",
+        button(
+            runtime,
+            "REMOVE RUNTIME PACKAGE",
             this::confirmRemove
         );
 
         LinearLayout game = card();
 
         line(game, "GTA V LITE 44GB");
-        line(game, "Box64: EXECUTION TEST AVAILABLE");
+        line(game, "Box64: CPU TEST AVAILABLE");
         line(game, "Wine: NOT INTEGRATED");
         line(game, "X11: NOT INTEGRATED");
         line(game, "Turnip/DXVK: NOT INTEGRATED");
@@ -250,7 +319,7 @@ public class RuntimeProcessActivity extends Activity {
         line(logs, "RUNTIME LOG");
 
         output = label(
-            "Press RUN BOX64 VERSION TEST.",
+            "Press RUN X86-64 CPU TEST.",
             13, Color.WHITE
         );
 
@@ -259,9 +328,13 @@ public class RuntimeProcessActivity extends Activity {
 
         LinearLayout previous = card();
 
-        button(previous, "OPEN v1.9 INSPECTORS",
+        button(
+            previous,
+            "OPEN v1.9 INSPECTORS",
             () -> startActivity(
-                new Intent(this, MainActivity.class)
+                new Intent(
+                    this, MainActivity.class
+                )
             )
         );
     }
@@ -279,8 +352,9 @@ public class RuntimeProcessActivity extends Activity {
         boolean popup
     ) {
         status.setText(
-            passed ? "STATUS: TEST PASS"
-                   : "STATUS: TEST FAILED / CHECK"
+            passed
+                ? "STATUS: TEST PASS"
+                : "STATUS: TEST FAILED / CHECK"
         );
 
         output.setText(report);
@@ -296,19 +370,26 @@ public class RuntimeProcessActivity extends Activity {
         StringBuilder r = new StringBuilder();
 
         r.append("BOX64 APK INSPECTION\n\n");
-        r.append("Path:\n").append(f.getAbsolutePath());
-        r.append("\n\nExists: ").append(f.isFile());
-        r.append("\nSize: ").append(f.length());
-        r.append("\nCan read: ").append(f.canRead());
-        r.append("\nCan execute: ").append(f.canExecute());
+        r.append("Path:\n")
+            .append(f.getAbsolutePath());
+        r.append("\n\nExists: ")
+            .append(f.isFile());
+        r.append("\nSize: ")
+            .append(f.length());
+        r.append("\nCan read: ")
+            .append(f.canRead());
+        r.append("\nCan execute: ")
+            .append(f.canExecute());
 
         if (f.isFile()) {
-            try (FileInputStream in = new FileInputStream(f)) {
+            try (FileInputStream in =
+                new FileInputStream(f)) {
+
                 byte[] h = new byte[20];
                 int n = in.read(h);
 
                 boolean elf = n >= 20
-                    && (h[0] & 255) == 0x7f
+                    && (h[0] & 255) == 127
                     && h[1] == 'E'
                     && h[2] == 'L'
                     && h[3] == 'F';
@@ -317,17 +398,24 @@ public class RuntimeProcessActivity extends Activity {
                     && (h[18] & 255) == 183
                     && (h[19] & 255) == 0;
 
-                r.append("\nELF header: ").append(elf);
-                r.append("\nAArch64 ELF: ").append(arm64);
+                r.append("\nELF header: ")
+                    .append(elf);
+                r.append("\nAArch64 ELF: ")
+                    .append(arm64);
 
             } catch (Exception e) {
-                r.append("\nRead error: ").append(e);
+                r.append("\nRead error: ")
+                    .append(e);
             }
         }
 
-        r.append("\n\nInspection is not execution.");
+        r.append(
+            "\n\nInspection is not execution."
+        );
 
-        showResult(r.toString(), f.isFile(), true);
+        showResult(
+            r.toString(), f.isFile(), true
+        );
     }
 
     private void runBox64() {
@@ -336,9 +424,7 @@ public class RuntimeProcessActivity extends Activity {
         if (!binary.isFile()) {
             showResult(
                 "BOX64 NOT FOUND\n\n" +
-                "Expected:\n" +
-                binary.getAbsolutePath() +
-                "\n\nCheck APK packaging.",
+                binary.getAbsolutePath(),
                 false,
                 true
             );
@@ -351,138 +437,442 @@ public class RuntimeProcessActivity extends Activity {
                 binary.getAbsolutePath(),
                 "--version"
             },
-            true
+            true,
+            false
         );
+    }
+
+    private File getX64TestFile() {
+        return new File(
+            getFilesDir(),
+            "titanx_x64_test"
+        );
+    }
+
+    private File extractX64Test()
+        throws IOException {
+
+        File destination = getX64TestFile();
+        File temp = new File(
+            getFilesDir(),
+            "titanx_x64_test.tmp"
+        );
+
+        if (temp.exists() && !temp.delete()) {
+            throw new IOException(
+                "Cannot clear temporary test file"
+            );
+        }
+
+        long total = 0;
+
+        try (
+            InputStream in =
+                getAssets().open(TEST_ASSET);
+            FileOutputStream out =
+                new FileOutputStream(temp)
+        ) {
+            byte[] buffer = new byte[8192];
+            int n;
+
+            while ((n = in.read(buffer)) != -1) {
+                total += n;
+
+                if (total > 20 * 1024 * 1024) {
+                    throw new IOException(
+                        "Test binary too large"
+                    );
+                }
+
+                out.write(buffer, 0, n);
+            }
+
+            out.getFD().sync();
+        } catch (IOException e) {
+            temp.delete();
+            throw e;
+        }
+
+        if (total < 64) {
+            temp.delete();
+            throw new IOException(
+                "Test binary is empty or invalid"
+            );
+        }
+
+        if (destination.exists()
+            && !destination.delete()) {
+            temp.delete();
+            throw new IOException(
+                "Cannot replace old test binary"
+            );
+        }
+
+        if (!temp.renameTo(destination)) {
+            temp.delete();
+            throw new IOException(
+                "Cannot activate test binary"
+            );
+        }
+
+        return destination;
+    }
+
+    private boolean isX64Elf(File file)
+        throws IOException {
+
+        try (FileInputStream in =
+            new FileInputStream(file)) {
+
+            byte[] h = new byte[20];
+            int offset = 0;
+
+            while (offset < h.length) {
+                int n = in.read(
+                    h,
+                    offset,
+                    h.length - offset
+                );
+
+                if (n < 0) return false;
+                offset += n;
+            }
+
+            return (h[0] & 255) == 127
+                && h[1] == 'E'
+                && h[2] == 'L'
+                && h[3] == 'F'
+                && (h[4] & 255) == 2
+                && (h[5] & 255) == 1
+                && (h[18] & 255) == 62
+                && (h[19] & 255) == 0;
+        }
+    }
+
+    private void inspectX64Test() {
+        if (busy) return;
+
+        busy = true;
+        status.setText("STATUS: INSPECTING");
+
+        new Thread(() -> {
+            String report;
+            boolean passed = false;
+
+            try {
+                File test = extractX64Test();
+                passed = isX64Elf(test);
+
+                report =
+                    "X86-64 TEST INSPECTION\n\n" +
+                    "Asset: " + TEST_ASSET +
+                    "\nPath: " +
+                    test.getAbsolutePath() +
+                    "\nSize: " + test.length() +
+                    "\nELF64 x86-64: " + passed +
+                    "\n\nInspection only." +
+                    "\nNo CPU emulation executed.";
+
+            } catch (Exception e) {
+                report =
+                    "X86-64 TEST INSPECTION FAILED\n\n"
+                    + e;
+            }
+
+            final String result = report;
+            final boolean ok = passed;
+
+            runOnUiThread(() -> {
+                busy = false;
+                showResult(result, ok, true);
+            });
+        }).start();
+    }
+
+    private void runX64Test() {
+        if (busy) return;
+
+        File box64 = getBox64File();
+
+        if (!box64.isFile()) {
+            showResult(
+                "BOX64 NOT FOUND\n\n" +
+                box64.getAbsolutePath(),
+                false,
+                true
+            );
+            return;
+        }
+
+        busy = true;
+        status.setText("STATUS: RUNNING X86-64 TEST");
+        output.setText(
+            "Extracting x86-64 test program..."
+        );
+
+        new Thread(() -> {
+            String report;
+            boolean passed = false;
+
+            try {
+                File test = extractX64Test();
+
+                if (!isX64Elf(test)) {
+                    throw new IOException(
+                        "Asset is not an ELF64 x86-64 program"
+                    );
+                }
+
+                String[] command = {
+                    box64.getAbsolutePath(),
+                    test.getAbsolutePath()
+                };
+
+                CommandResult result =
+                    executeCommand(command, true);
+
+                passed =
+                    result.exitCode == 0
+                    && !result.timedOut
+                    && result.output.contains(
+                        "TITANX X86_64 TEST"
+                    )
+                    && result.output.contains(
+                        "RESULT: 1111111110"
+                    )
+                    && result.output.contains(
+                        EXPECTED
+                    );
+
+                report =
+                    "TITANX X86-64 CPU TEST\n\n" +
+                    "BOX64:\n" +
+                    box64.getAbsolutePath() +
+                    "\n\nX86-64 PROGRAM:\n" +
+                    test.getAbsolutePath() +
+                    "\n\nEXIT CODE: " +
+                    result.exitCode +
+                    "\nTIMEOUT: " +
+                    result.timedOut +
+                    "\nCPU RESULT: " +
+                    (passed ? "PASS" : "FAIL") +
+                    "\n\nOUTPUT:\n" +
+                    result.output +
+                    "\n\n" +
+                    (passed
+                        ? "Box64 executed the x86-64 test program successfully."
+                        : "The expected CPU test output was not verified.");
+
+            } catch (Exception e) {
+                report =
+                    "X86-64 CPU TEST FAILED\n\n" +
+                    e.toString() +
+                    "\n\nCheck the runtime log.";
+            }
+
+            final String finalReport = report;
+            final boolean finalPassed = passed;
+
+            runOnUiThread(() -> {
+                busy = false;
+                showResult(
+                    finalReport,
+                    finalPassed,
+                    true
+                );
+            });
+        }).start();
+    }
+
+    private static class CommandResult {
+        int exitCode = -1;
+        boolean timedOut;
+        String output = "";
+    }
+
+    private CommandResult executeCommand(
+        String[] command,
+        boolean box64Test
+    ) throws Exception {
+
+        CommandResult result =
+            new CommandResult();
+
+        ProcessBuilder builder =
+            new ProcessBuilder(command);
+
+        builder.redirectErrorStream(true);
+        builder.directory(getFilesDir());
+
+        builder.environment().put(
+            "HOME",
+            getFilesDir().getAbsolutePath()
+        );
+
+        builder.environment().put(
+            "TMPDIR",
+            getCacheDir().getAbsolutePath()
+        );
+
+        if (box64Test) {
+            builder.environment().put(
+                "BOX64_LOG", "1"
+            );
+        }
+
+        Process process = builder.start();
+
+        ByteArrayOutputStream bytes =
+            new ByteArrayOutputStream();
+
+        Thread reader = new Thread(() -> {
+            try (InputStream in =
+                process.getInputStream()) {
+
+                byte[] buffer = new byte[4096];
+                int n;
+
+                while ((n = in.read(buffer)) != -1) {
+                    synchronized (bytes) {
+                        int remaining =
+                            65536 - bytes.size();
+
+                        if (remaining > 0) {
+                            bytes.write(
+                                buffer,
+                                0,
+                                Math.min(n, remaining)
+                            );
+                        }
+                    }
+                }
+            } catch (IOException ignored) {
+            }
+        });
+
+        reader.start();
+
+        try {
+            boolean finished = process.waitFor(
+                20, TimeUnit.SECONDS
+            );
+
+            if (!finished) {
+                result.timedOut = true;
+                process.destroyForcibly();
+                process.waitFor(
+                    3, TimeUnit.SECONDS
+                );
+            } else {
+                result.exitCode =
+                    process.exitValue();
+            }
+
+            reader.join(3000);
+
+            synchronized (bytes) {
+                result.output = new String(
+                    bytes.toByteArray(),
+                    StandardCharsets.UTF_8
+                );
+            }
+
+            if (result.timedOut) {
+                result.output +=
+                    "\nPROCESS TIMEOUT (20 seconds)";
+            }
+
+        } finally {
+            if (process.isAlive()) {
+                process.destroyForcibly();
+            }
+        }
+
+        return result;
     }
 
     private void runCommand(
         String title,
         String[] command,
-        boolean box64Test
+        boolean box64Test,
+        boolean strictOutput
     ) {
         if (busy) return;
 
         busy = true;
         status.setText("STATUS: RUNNING");
-
-        output.setText(
-            "Running " + title + "..."
-        );
+        output.setText("Running " + title + "...");
 
         new Thread(() -> {
-            Process process = null;
             String report;
             boolean passed = false;
 
             try {
-                ProcessBuilder builder =
-                    new ProcessBuilder(command);
-
-                builder.redirectErrorStream(true);
-                builder.directory(getFilesDir());
-
-                builder.environment().put(
-                    "HOME", getFilesDir().getAbsolutePath()
-                );
-
-                builder.environment().put(
-                    "TMPDIR", getCacheDir().getAbsolutePath()
-                );
-
-                if (box64Test) {
-                    builder.environment().put(
-                        "BOX64_LOG", "1"
-                    );
-                }
-
-                process = builder.start();
-
-                boolean finished =
-                    process.waitFor(12, TimeUnit.SECONDS);
-
-                if (!finished) {
-                    process.destroyForcibly();
-                    report =
-                        title + "\n\nPROCESS TIMEOUT\n" +
-                        "Limit: 12 seconds";
-                } else {
-                    int code = process.exitValue();
-
-                    ByteArrayOutputStream bytes =
-                        new ByteArrayOutputStream();
-
-                    try (InputStream in =
-                        process.getInputStream()) {
-
-                        byte[] buffer = new byte[4096];
-                        int n;
-
-                        while ((n = in.read(buffer)) != -1) {
-                            int remaining =
-                                65536 - bytes.size();
-
-                            if (remaining <= 0) break;
-
-                            bytes.write(
-                                buffer, 0,
-                                Math.min(n, remaining)
-                            );
-                        }
-                    }
-
-                    String stdout = new String(
-                        bytes.toByteArray(),
-                        StandardCharsets.UTF_8
+                CommandResult result =
+                    executeCommand(
+                        command,
+                        box64Test
                     );
 
-                    passed = code == 0;
+                passed =
+                    result.exitCode == 0
+                    && !result.timedOut;
 
-                    report =
-                        title +
-                        "\n\nCOMMAND:\n" +
-                        Arrays.toString(command) +
-                        "\n\nEXIT CODE: " + code +
-                        "\nRESULT: " +
-                        (passed ? "PASS" : "FAIL") +
-                        "\n\nOUTPUT:\n" + stdout;
+                if (strictOutput) {
+                    passed = passed &&
+                        result.output.contains(EXPECTED);
                 }
+
+                report =
+                    title +
+                    "\n\nCOMMAND:\n" +
+                    Arrays.toString(command) +
+                    "\n\nEXIT CODE: " +
+                    result.exitCode +
+                    "\nTIMEOUT: " +
+                    result.timedOut +
+                    "\nRESULT: " +
+                    (passed ? "PASS" : "FAIL") +
+                    "\n\nOUTPUT:\n" +
+                    result.output;
 
             } catch (Exception e) {
                 report =
                     title +
                     "\n\nEXECUTION ERROR:\n" +
-                    e.toString() +
-                    "\n\nPossible causes:" +
-                    "\n- Android execution restriction" +
-                    "\n- Missing ELF interpreter" +
-                    "\n- Missing shared libraries" +
-                    "\n- Incompatible binary";
-            } finally {
-                if (process != null &&
-                    process.isAlive()) {
-                    process.destroyForcibly();
-                }
+                    e.toString();
             }
 
-            final String result = report;
-            final boolean success = passed;
+            final String finalReport = report;
+            final boolean finalPassed = passed;
 
             runOnUiThread(() -> {
                 busy = false;
-                showResult(result, success, box64Test);
+                showResult(
+                    finalReport,
+                    finalPassed,
+                    true
+                );
             });
-
         }).start();
     }
 
     private void pickZip() {
         if (busy) return;
 
-        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("application/zip");
+        Intent intent = new Intent(
+            Intent.ACTION_OPEN_DOCUMENT
+        );
 
-        startActivityForResult(i, PICK_ZIP);
+        intent.addCategory(
+            Intent.CATEGORY_OPENABLE
+        );
+
+        intent.setType("application/zip");
+
+        startActivityForResult(
+            intent, PICK_ZIP
+        );
     }
 
     @Override
@@ -492,13 +882,16 @@ public class RuntimeProcessActivity extends Activity {
         Intent data
     ) {
         super.onActivityResult(
-            requestCode, resultCode, data
+            requestCode,
+            resultCode,
+            data
         );
 
         if (requestCode == PICK_ZIP
             && resultCode == RESULT_OK
             && data != null
             && data.getData() != null) {
+
             importZip(data.getData());
         }
     }
@@ -511,18 +904,21 @@ public class RuntimeProcessActivity extends Activity {
 
         new Thread(() -> {
             File stage = new File(
-                getFilesDir(), "runtime_v22_staging"
+                getFilesDir(),
+                "runtime_v22_staging"
             );
 
             File backup = new File(
-                getFilesDir(), "runtime_v22_backup"
+                getFilesDir(),
+                "runtime_v22_backup"
             );
 
             String result;
             boolean success = false;
 
             try {
-                if (stage.exists() && !deleteTree(stage)) {
+                if (stage.exists()
+                    && !deleteTree(stage)) {
                     throw new IOException(
                         "Cannot clear staging directory"
                     );
@@ -535,14 +931,15 @@ public class RuntimeProcessActivity extends Activity {
                 }
 
                 String root =
-                    stage.getCanonicalPath() +
-                    File.separator;
+                    stage.getCanonicalPath()
+                    + File.separator;
 
                 long total = 0;
                 int count = 0;
 
                 try (InputStream raw =
-                    getContentResolver().openInputStream(uri)) {
+                    getContentResolver()
+                        .openInputStream(uri)) {
 
                     if (raw == null) {
                         throw new IOException(
@@ -556,20 +953,22 @@ public class RuntimeProcessActivity extends Activity {
                         )) {
 
                         ZipEntry entry;
-                        byte[] buffer = new byte[65536];
+                        byte[] buffer =
+                            new byte[65536];
 
-                        while ((entry = zip.getNextEntry())
-                            != null) {
+                        while ((entry =
+                            zip.getNextEntry()) != null) {
 
                             count++;
 
                             if (count > MAX_FILES) {
                                 throw new IOException(
-                                    "Too many entries"
+                                    "Too many ZIP entries"
                                 );
                             }
 
-                            String name = entry.getName();
+                            String name =
+                                entry.getName();
 
                             if (name.indexOf('\0') >= 0
                                 || name.startsWith("/")
@@ -579,7 +978,9 @@ public class RuntimeProcessActivity extends Activity {
                                 );
                             }
 
-                            File target = new File(stage, name);
+                            File target =
+                                new File(stage, name);
+
                             String path =
                                 target.getCanonicalPath();
 
@@ -593,7 +994,7 @@ public class RuntimeProcessActivity extends Activity {
                                 if (!target.isDirectory()
                                     && !target.mkdirs()) {
                                     throw new IOException(
-                                        "Directory creation failed"
+                                        "Cannot create directory"
                                     );
                                 }
                             } else {
@@ -604,7 +1005,7 @@ public class RuntimeProcessActivity extends Activity {
                                     || (!parent.isDirectory()
                                     && !parent.mkdirs())) {
                                     throw new IOException(
-                                        "Parent creation failed"
+                                        "Cannot create parent"
                                     );
                                 }
 
@@ -615,22 +1016,27 @@ public class RuntimeProcessActivity extends Activity {
                                 }
 
                                 try (FileOutputStream out =
-                                    new FileOutputStream(target)) {
+                                    new FileOutputStream(
+                                        target
+                                    )) {
 
                                     int n;
 
-                                    while ((n = zip.read(buffer))
-                                        != -1) {
+                                    while ((n =
+                                        zip.read(buffer)) != -1) {
 
                                         total += n;
 
-                                        if (total > MAX_ZIP_BYTES) {
+                                        if (total >
+                                            MAX_ZIP_BYTES) {
                                             throw new IOException(
                                                 "ZIP exceeds 1 GB"
                                             );
                                         }
 
-                                        out.write(buffer, 0, n);
+                                        out.write(
+                                            buffer, 0, n
+                                        );
                                     }
                                 }
                             }
@@ -641,13 +1047,15 @@ public class RuntimeProcessActivity extends Activity {
                 }
 
                 if (count == 0) {
-                    throw new IOException("Empty ZIP");
+                    throw new IOException(
+                        "Empty ZIP"
+                    );
                 }
 
                 if (backup.exists()
                     && !deleteTree(backup)) {
                     throw new IOException(
-                        "Cannot clear old backup"
+                        "Cannot clear backup"
                     );
                 }
 
@@ -668,21 +1076,25 @@ public class RuntimeProcessActivity extends Activity {
                     );
                 }
 
-                if (backup.exists()) deleteTree(backup);
+                if (backup.exists()) {
+                    deleteTree(backup);
+                }
 
                 result =
                     "ZIP IMPORT COMPLETE" +
                     "\nEntries: " + count +
                     "\nBytes: " + total +
-                    "\n\nFiles stored for inspection." +
-                    "\nNo imported code executed.";
+                    "\n\nImported files are not executed.";
 
                 success = true;
 
             } catch (Exception e) {
-                result = "IMPORT FAILED\n" + e;
+                result =
+                    "IMPORT FAILED\n\n" + e;
             } finally {
-                if (stage.exists()) deleteTree(stage);
+                if (stage.exists()) {
+                    deleteTree(stage);
+                }
             }
 
             final String report = result;
@@ -693,7 +1105,6 @@ public class RuntimeProcessActivity extends Activity {
                 buildPage();
                 showResult(report, ok, true);
             });
-
         }).start();
     }
 
@@ -703,8 +1114,10 @@ public class RuntimeProcessActivity extends Activity {
         File[] files = root.listFiles();
 
         if (files != null) {
-            for (File f : files) {
-                if (!deleteTree(f)) return false;
+            for (File file : files) {
+                if (!deleteTree(file)) {
+                    return false;
+                }
             }
         }
 
@@ -725,14 +1138,17 @@ public class RuntimeProcessActivity extends Activity {
         Inventory inv,
         int depth
     ) {
-        if (depth > 24 || inv.files >= MAX_FILES) return;
+        if (depth > 24
+            || inv.files >= MAX_FILES) return;
 
         File[] files = dir.listFiles();
         if (files == null) return;
 
         for (File f : files) {
             if (f.isDirectory()) {
-                scanDir(f, inv, depth + 1);
+                scanDir(
+                    f, inv, depth + 1
+                );
                 continue;
             }
 
@@ -742,9 +1158,13 @@ public class RuntimeProcessActivity extends Activity {
             inv.bytes += f.length();
 
             String name =
-                f.getName().toLowerCase(Locale.ROOT);
+                f.getName().toLowerCase(
+                    Locale.ROOT
+                );
 
-            if (name.equals("box64")) inv.box64++;
+            if (name.equals("box64")) {
+                inv.box64++;
+            }
 
             if (name.equals("wine")
                 || name.equals("wine64")
@@ -779,7 +1199,9 @@ public class RuntimeProcessActivity extends Activity {
         Inventory inv = new Inventory();
 
         if (runtimeDir.isDirectory()) {
-            scanDir(runtimeDir, inv, 0);
+            scanDir(
+                runtimeDir, inv, 0
+            );
         }
 
         return inv;
@@ -794,22 +1216,27 @@ public class RuntimeProcessActivity extends Activity {
             Inventory inv = inventory();
 
             String report =
-                "RUNTIME COMPONENT SCAN v2.4\n\n" +
+                "RUNTIME COMPONENT SCAN v2.5.1\n\n" +
                 "Imported files: " + inv.files +
                 "\nBytes: " + inv.bytes +
                 "\nELF: " + inv.elf +
-                "\nBox64 ZIP candidates: " + inv.box64 +
-                "\nWine candidates: " + inv.wine +
-                "\nDXVK DLL candidates: " + inv.dxvk +
+                "\nBox64 ZIP candidates: " +
+                inv.box64 +
+                "\nWine candidates: " +
+                inv.wine +
+                "\nDXVK DLL candidates: " +
+                inv.dxvk +
                 "\n\nEmbedded Box64: " +
                 (getBox64File().isFile()
-                    ? "FOUND IN APK"
+                    ? "FOUND"
                     : "NOT FOUND") +
                 "\n\nZIP files are not executed.";
 
             runOnUiThread(() -> {
                 busy = false;
-                showResult(report, true, true);
+                showResult(
+                    report, true, true
+                );
             });
         }).start();
     }
@@ -823,15 +1250,31 @@ public class RuntimeProcessActivity extends Activity {
             Inventory inv = inventory();
             File box64 = getBox64File();
 
+            boolean assetPresent;
+
+            try (InputStream in =
+                getAssets().open(TEST_ASSET)) {
+                assetPresent =
+                    in.read() != -1;
+            } catch (IOException e) {
+                assetPresent = false;
+            }
+
             String report =
-                "TITANX READINESS v2.4\n\n" +
-                "Box64 embedded: " + box64.isFile() +
-                "\nBox64 executable flag: " +
+                "TITANX READINESS v2.5.1\n\n" +
+                "Box64 embedded: " +
+                box64.isFile() +
+                "\nBox64 executable: " +
                 box64.canExecute() +
-                "\nImported files: " + inv.files +
-                "\nWine candidates: " + inv.wine +
-                "\nDXVK DLL candidates: " + inv.dxvk +
-                "\n\nBox64 execution: TEST SEPARATELY" +
+                "\nX86-64 test asset: " +
+                assetPresent +
+                "\nImported files: " +
+                inv.files +
+                "\nWine candidates: " +
+                inv.wine +
+                "\nDXVK DLL candidates: " +
+                inv.dxvk +
+                "\n\nCPU execution: TEST SEPARATELY" +
                 "\nWine: NOT INTEGRATED" +
                 "\nX11: NOT INTEGRATED" +
                 "\nTurnip: NOT INTEGRATED" +
@@ -839,7 +1282,9 @@ public class RuntimeProcessActivity extends Activity {
 
             runOnUiThread(() -> {
                 busy = false;
-                showResult(report, true, true);
+                showResult(
+                    report, true, true
+                );
             });
         }).start();
     }
@@ -848,31 +1293,40 @@ public class RuntimeProcessActivity extends Activity {
         if (busy) return;
 
         new AlertDialog.Builder(this)
-            .setTitle("Remove imported Runtime?")
+            .setTitle(
+                "Remove imported Runtime?"
+            )
             .setMessage(
                 "Only imported ZIP files will be deleted. " +
-                "Embedded Box64 remains in the APK."
+                "Embedded Box64 and the CPU test remain."
             )
-            .setNegativeButton("CANCEL", null)
-            .setPositiveButton("REMOVE", (d, w) -> {
-                busy = true;
+            .setNegativeButton(
+                "CANCEL", null
+            )
+            .setPositiveButton(
+                "REMOVE",
+                (d, w) -> {
+                    busy = true;
 
-                new Thread(() -> {
-                    boolean ok = deleteTree(runtimeDir);
+                    new Thread(() -> {
+                        boolean ok =
+                            deleteTree(runtimeDir);
 
-                    runOnUiThread(() -> {
-                        busy = false;
-                        buildPage();
+                        runOnUiThread(() -> {
+                            busy = false;
+                            buildPage();
 
-                        showResult(
-                            ok ? "Imported runtime removed."
-                               : "Runtime removal failed.",
-                            ok,
-                            true
-                        );
-                    });
-                }).start();
-            })
+                            showResult(
+                                ok
+                                    ? "Imported runtime removed."
+                                    : "Runtime removal failed.",
+                                ok,
+                                true
+                            );
+                        });
+                    }).start();
+                }
+            )
             .show();
     }
 }

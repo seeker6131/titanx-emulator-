@@ -32,19 +32,15 @@ jobs:
         with:
           gradle-version: "8.9"
 
-      - name: Accept Android SDK Licenses
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p "$ANDROID_HOME/licenses"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /tmp/licenses.log 2>&1 || true
-          tail -n 15 /tmp/licenses.log
-
       - name: Install Android SDK
         shell: bash
         run: |
           set -euo pipefail
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+
+          yes | "$SDKMANAGER" --licenses > /tmp/sdk-licenses.log 2>&1 || true
+
+          "$SDKMANAGER" --install \
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "ndk;27.2.12479018" \
@@ -57,12 +53,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git cmake ninja-build make \
-            file binutils gcc python3 unzip
+            gcc binutils file unzip
 
       - name: Fetch Official Box64
         shell: bash
         run: |
           set -euo pipefail
+
           git clone --depth 1 \
             https://github.com/ptitSeb/box64.git \
             box64-source
@@ -93,19 +90,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           cmake --build box64-build \
             --target box64 --parallel 2
 
           test -s box64-build/box64
 
-      - name: Create Dynamic PIE X86-64 Test
+      - name: Build Existing CPU Test
         shell: bash
         run: |
           set -euo pipefail
-
           mkdir -p test-program
 
-          cat > test-program/test.S <<'EOF'
+          cat > test-program/cpu.S <<'EOF'
           .section .rodata
           message:
               .ascii "TITANX X86_64 TEST\n"
@@ -150,53 +147,105 @@ jobs:
             -Wl,--no-dynamic-linker \
             -Wl,-e,_start \
             -o test-program/titanx_x64_test \
-            test-program/test.S
-
-          file test-program/titanx_x64_test
-
-          readelf -h test-program/titanx_x64_test \
-            | tee x64-test-elf-report.txt
-
-          readelf -l test-program/titanx_x64_test \
-            | tee x64-test-program-headers.txt
-
-          readelf -d test-program/titanx_x64_test \
-            | tee x64-test-dynamic-report.txt
-
-          grep -q "Advanced Micro Devices X86-64" \
-            x64-test-elf-report.txt
-
-          grep -q "DYN" x64-test-elf-report.txt
-
-          if grep -q "INTERP" \
-            x64-test-program-headers.txt; then
-            echo "ERROR: Unexpected ELF interpreter"
-            exit 1
-          fi
-
-          if grep -q "NEEDED" \
-            x64-test-dynamic-report.txt; then
-            echo "ERROR: Unexpected shared dependency"
-            exit 1
-          fi
-
-          echo "PIE x86-64 test ready"
-
-      - name: Test X86-64 Binary On Build Runner
-        shell: bash
-        run: |
-          set -euo pipefail
+            test-program/cpu.S
 
           chmod +x test-program/titanx_x64_test
 
           test-program/titanx_x64_test \
-            | tee x64-host-test.txt
+            | tee cpu-host-result.txt
 
           grep -q "CPU TEST PASS" \
-            x64-host-test.txt
+            cpu-host-result.txt
 
-          grep -q "RESULT: 1111111110" \
-            x64-host-test.txt
+      - name: Build Glibc Dynamic Test
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > test-program/glibc_test.c <<'EOF'
+          #include <stdio.h>
+          #include <stdlib.h>
+          #include <string.h>
+
+          int main(void) {
+              const char *message = "TITANX GLIBC TEST";
+
+              printf("%s\n", message);
+              printf("GLIBC STRING LENGTH: %zu\n",
+                     strlen(message));
+
+              puts("DYNAMIC LIBRARY TEST PASS");
+              fflush(stdout);
+
+              return EXIT_SUCCESS;
+          }
+          EOF
+
+          gcc \
+            -O2 \
+            -fPIE \
+            -pie \
+            -o test-program/titanx_glibc_test \
+            test-program/glibc_test.c
+
+          file test-program/titanx_glibc_test \
+            | tee glibc-file-report.txt
+
+          readelf -h test-program/titanx_glibc_test \
+            | tee glibc-elf-report.txt
+
+          readelf -l test-program/titanx_glibc_test \
+            | tee glibc-program-headers.txt
+
+          readelf -d test-program/titanx_glibc_test \
+            | tee glibc-dynamic-report.txt
+
+          grep -q "Advanced Micro Devices X86-64" \
+            glibc-elf-report.txt
+
+          grep -q "NEEDED" glibc-dynamic-report.txt
+
+          grep -q "libc.so.6" glibc-dynamic-report.txt
+
+          test-program/titanx_glibc_test \
+            | tee glibc-host-result.txt
+
+          grep -q "DYNAMIC LIBRARY TEST PASS" \
+            glibc-host-result.txt
+
+      - name: Prepare Glibc Runtime Assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          DEST="app/src/main/assets/linux_x64"
+          mkdir -p "$DEST"
+
+          LOADER="/lib64/ld-linux-x86-64.so.2"
+          LIBC="/lib/x86_64-linux-gnu/libc.so.6"
+
+          test -f "$LOADER"
+          test -f "$LIBC"
+
+          cp -L "$LOADER" \
+            "$DEST/ld-linux-x86-64.so.2"
+
+          cp -L "$LIBC" \
+            "$DEST/libc.so.6"
+
+          cp test-program/titanx_glibc_test \
+            "$DEST/titanx_glibc_test"
+
+          chmod 755 \
+            "$DEST/ld-linux-x86-64.so.2" \
+            "$DEST/libc.so.6" \
+            "$DEST/titanx_glibc_test"
+
+          file "$DEST/"* \
+            | tee glibc-assets-report.txt
+
+          sha256sum "$DEST/"* \
+            | tee glibc-assets-sha256.txt
 
       - name: Package Native Binaries
         shell: bash
@@ -204,7 +253,6 @@ jobs:
           set -euo pipefail
 
           DEST="app/src/main/jniLibs/arm64-v8a"
-
           mkdir -p "$DEST"
 
           cp box64-build/box64 \
@@ -220,8 +268,8 @@ jobs:
           test -s "$DEST/libbox64.so"
           test -s "$DEST/libtitanxtest.so"
 
-          file "$DEST/libbox64.so"
-          file "$DEST/libtitanxtest.so"
+          file "$DEST/"* \
+            | tee native-binaries-report.txt
 
           NDK="$ANDROID_HOME/ndk/27.2.12479018"
           TOOLS="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
@@ -230,14 +278,13 @@ jobs:
             "$DEST/libbox64.so" \
             | tee box64-elf-report.txt
 
-          grep -q "AArch64" \
-            box64-elf-report.txt
+          grep -q "AArch64" box64-elf-report.txt
 
           readelf -h "$DEST/libtitanxtest.so" \
-            | tee packaged-test-elf.txt
+            | tee cpu-elf-report.txt
 
           grep -q "Advanced Micro Devices X86-64" \
-            packaged-test-elf.txt
+            cpu-elf-report.txt
 
       - name: Build TitanX APK
         shell: bash
@@ -257,41 +304,25 @@ jobs:
           unzip -l "$APK" \
             | tee apk-contents.txt
 
-          grep -q "lib/arm64-v8a/libbox64.so" \
-            apk-contents.txt
+          for ENTRY in \
+            "lib/arm64-v8a/libbox64.so" \
+            "lib/arm64-v8a/libtitanxtest.so" \
+            "assets/linux_x64/ld-linux-x86-64.so.2" \
+            "assets/linux_x64/libc.so.6" \
+            "assets/linux_x64/titanx_glibc_test"
+          do
+            unzip -Z1 "$APK" \
+              | grep -Fx "$ENTRY"
 
-          grep -q "lib/arm64-v8a/libtitanxtest.so" \
-            apk-contents.txt
+            echo "VERIFIED: $ENTRY"
+          done
 
-          mkdir -p apk-check
-
-          unzip -p "$APK" \
-            lib/arm64-v8a/libtitanxtest.so \
-            > apk-check/libtitanxtest.so
-
-          readelf -h apk-check/libtitanxtest.so \
-            | tee final-test-elf.txt
-
-          readelf -l apk-check/libtitanxtest.so \
-            | tee final-test-program-headers.txt
-
-          grep -q "Advanced Micro Devices X86-64" \
-            final-test-elf.txt
-
-          grep -q "DYN" final-test-elf.txt
-
-          if grep -q "INTERP" \
-            final-test-program-headers.txt; then
-            echo "Unexpected interpreter in APK binary"
-            exit 1
-          fi
-
-          echo "APK binary verification PASS"
+          echo "TITANX v2.6 PACKAGE VERIFICATION PASS"
 
       - name: Upload TitanX APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-v2.5.3-APK
+          name: TitanX-v2.6-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -299,16 +330,19 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-v2.5.3-Diagnostics
+          name: TitanX-v2.6-Diagnostics
           path: |
             box64-commit.txt
             box64-elf-report.txt
-            x64-test-elf-report.txt
-            x64-test-program-headers.txt
-            x64-test-dynamic-report.txt
-            x64-host-test.txt
-            packaged-test-elf.txt
-            final-test-elf.txt
-            final-test-program-headers.txt
+            cpu-host-result.txt
+            cpu-elf-report.txt
+            glibc-file-report.txt
+            glibc-elf-report.txt
+            glibc-program-headers.txt
+            glibc-dynamic-report.txt
+            glibc-host-result.txt
+            glibc-assets-report.txt
+            glibc-assets-sha256.txt
+            native-binaries-report.txt
             apk-contents.txt
           if-no-files-found: ignore

@@ -149,7 +149,7 @@ public class MainActivity extends Activity {
         prefs = getSharedPreferences("titanx", MODE_PRIVATE);
         runtime = new File(getFilesDir(), "runtime");
 
-        log("TitanX v1.6 started");
+        log("TitanX v1.7 started");
         buildLayout();
         page("Dashboard");
     }
@@ -194,7 +194,7 @@ public class MainActivity extends Activity {
         nav.removeAllViews();
 
         subtitle.setText(
-                "v1.6 • " + Build.SUPPORTED_ABIS[0]
+                "v1.7 • " + Build.SUPPORTED_ABIS[0]
                 + " • " + (runtime.isDirectory()
                 ? "Runtime files present"
                 : "Runtime offline"));
@@ -272,6 +272,7 @@ public class MainActivity extends Activity {
         field(e, "RUNTIME READINESS", "v1.4");
         field(e, "COMPONENT MANAGER", "v1.5");
         field(e, "WINDOWS PE INSPECTOR", "v1.6");
+        field(e, "WINDOWS DLL RESOLVER", "v1.7");
 
         field(e, "WINE", "Not integrated");
         field(e, "FEX", "Not integrated");
@@ -295,6 +296,9 @@ public class MainActivity extends Activity {
         note(c, "Imported files are inspected, not executed.");
 
         if (runtime.isDirectory()) {
+            button(c, "CHECK WINDOWS DLL DEPENDENCIES",
+                    this::dllScanAsync);
+
             button(c, "SCAN WINDOWS EXE / DLL",
                     this::peScanAsync);
 
@@ -325,6 +329,9 @@ public class MainActivity extends Activity {
             button(c, "VERIFY PACKAGE MANIFEST",
                     this::verifyManifestAsync);
         }
+
+        button(c, "RUN DLL RESOLVER SELF-TEST",
+                this::dllTestAsync);
 
         button(c, "RUN PE SELF-TEST",
                 this::peTestAsync);
@@ -357,6 +364,31 @@ public class MainActivity extends Activity {
                     this::removeRuntime);
         }
 
+        heading("WINDOWS DLL DEPENDENCIES");
+        LinearLayout dll = card();
+
+        field(dll, "FOUND IN ZIP",
+                "Matching DLL candidate and architecture");
+
+        field(dll, "MISSING IN ZIP",
+                "No matching bundled DLL");
+
+        field(dll, "SYSTEM DLL CANDIDATE",
+                "Recognized Windows system DLL name");
+
+        field(dll, "ARCHITECTURE MISMATCH",
+                "Bundled DLL uses another CPU architecture");
+
+        field(dll, "AMBIGUOUS",
+                "Multiple matching DLL candidates");
+
+        field(dll, "UNVERIFIED",
+                "Incomplete PE metadata");
+
+        note(dll,
+                "This is a static inspection. "
+                + "Actual Windows loader behavior is not simulated.");
+
         heading("WINDOWS PE CAPABILITIES");
         LinearLayout pe = card();
 
@@ -368,10 +400,6 @@ public class MainActivity extends Activity {
         field(pe, "DLL IMPORTS",
                 "Normal PE Import Directory");
         field(pe, "WINDOWS EXECUTION", "Not available");
-
-        note(pe,
-                "PE inspection reads metadata only. "
-                + "It does not execute Windows programs.");
 
         heading("RUNTIME COMPONENT CAPABILITIES");
         LinearLayout info = card();
@@ -417,6 +445,18 @@ public class MainActivity extends Activity {
                 report(title, value);
             });
         }).start();
+    }
+
+    private void dllScanAsync() {
+        asyncReport(
+                "TitanX Windows DLL Resolver v1.7",
+                () -> PeDependencyResolver.analyze(runtime));
+    }
+
+    private void dllTestAsync() {
+        asyncReport(
+                "TitanX DLL Resolver Self-Test v1.7",
+                PeDependencyResolver::selfTest);
     }
 
     private void peScanAsync() {
@@ -641,13 +681,14 @@ public class MainActivity extends Activity {
         LinearLayout c = card();
 
         field(c, "WINDOWS EXE INSPECTION", "Available");
+        field(c, "DLL DEPENDENCY INSPECTION", "Available");
         field(c, "GAME LAUNCHER", "Not implemented");
         field(c, "WINE", "Not integrated");
         field(c, "FEX", "Not integrated");
         field(c, "DXVK", "Not integrated");
 
         note(c,
-                "TitanX v1.6 can inspect PE files. "
+                "TitanX v1.7 inspects Windows PE metadata. "
                 + "Windows game execution is not available.");
 
         button(c, "OPEN RUNTIME",

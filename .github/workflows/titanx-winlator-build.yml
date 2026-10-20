@@ -1,4 +1,3 @@
-
 name: TitanX 8GB - Wine Game Engine
 
 on:
@@ -81,6 +80,110 @@ jobs:
       - name: Apply real Turnip and DXVK dropdowns plus 8GB tuning
         run: python3 titanx_patch.py
 
+      - name: Fix native driver paths and startup diagnostics (v4.2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('winlator')
+
+          def change(path, old, new):
+              f = root/path
+              txt = f.read_text(encoding='utf-8')
+              n = txt.count(old)
+              if n != 1:
+                  raise RuntimeError(f'Unexpected upstream source in {path}: match count {n}')
+              f.write_text(txt.replace(old, new, 1), encoding='utf-8')
+              print('Fixed:', path)
+
+          # Fix the Android package rebrand: native C servers and Java storage
+          # still reference /data/data/com.winlator in the v4.1 build.
+          paths = (
+              'app/src/main/cpp/vortekrenderer/include/vortek.h',
+              'app/src/main/cpp/gladiorenderer/include/gladio.h',
+              'app/src/main/java/com/winlator/core/AppUtils.java',
+          )
+          for path in paths:
+              change(path, '/data/data/com.winlator/', '/data/data/com.titanx.engine8gb/')
+
+          change('app/build.gradle', 'versionCode 410', 'versionCode 420')
+          change('app/build.gradle', 'versionName "4.1.0-beta"', 'versionName "4.2.0-beta"')
+
+          # Detect failures instead of displaying an indefinite Starting up dialog.
+          path = 'app/src/main/java/com/winlator/XServerDisplayActivity.java'
+          change(path, '    private String screenEffectProfile;', '''    private String screenEffectProfile;
+              private volatile boolean titanxDesktopVisible = false;
+              private volatile String titanxBootStage = "initializing";
+              private final java.util.concurrent.atomic.AtomicBoolean titanxErrorShown =
+                      new java.util.concurrent.atomic.AtomicBoolean(false);
+
+              private void reportTitanxStartFailure(String reason) {
+                  if (titanxDesktopVisible || !titanxErrorShown.compareAndSet(false, true)) return;
+                  runOnUiThread(() -> {
+                      if (isFinishing() || isDestroyed()) return;
+                      new androidx.appcompat.app.AlertDialog.Builder(this)
+                              .setTitle("TitanX 4.2 - Startup Diagnostic")
+                              .setMessage(reason + "\\nStage: " + titanxBootStage
+                                      + "\\n\\nPlease send a screenshot of this message.")
+                              .setPositiveButton("OK", null).show();
+                  });
+              }
+          ''')
+          change(path, '                    flags[0] = true;', '''                    flags[0] = true;
+                              titanxDesktopVisible = true;''')
+          change(path, '        setupUI();\n\n        Executors.newSingleThreadExecutor().execute(() -> {\n            if (!isGenerateWineprefix()) {\n                setupWineSystemFiles();\n                extractGraphicsDriverFiles();\n                changeWineAudioDriver();\n            }\n            setupXEnvironment();\n        });', '''        setupUI();
+
+                  if (!isGenerateWineprefix()) {
+                      new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                          if (!titanxDesktopVisible && !isFinishing()) {
+                              File r = rootFS.getRootDir();
+                              File binary = new File(r, "usr/local/bin/box64");
+                              File wine = new File(r, "opt/wine/bin/wine");
+                              reportTitanxStartFailure("No Windows desktop after 90 seconds."
+                                  + "\\nBox64 exists: " + binary.isFile()
+                                  + "\\nWine exists: " + wine.isFile()
+                                  + "\\nRootFS exists: " + r.isDirectory());
+                          }
+                      }, 90000L);
+                  }
+
+                  Executors.newSingleThreadExecutor().execute(() -> {
+                      try {
+                          if (!isGenerateWineprefix()) {
+                              titanxBootStage = "Preparing Wine files";
+                              setupWineSystemFiles();
+                              titanxBootStage = "Loading graphics driver";
+                              extractGraphicsDriverFiles();
+                              titanxBootStage = "Starting audio";
+                              changeWineAudioDriver();
+                          }
+                          titanxBootStage = "Launching Box64 and X11";
+                          setupXEnvironment();
+                          titanxBootStage = "Waiting for Wine desktop";
+                      } catch (Throwable e) {
+                          android.util.Log.e("TitanXBoot", "Startup exception: " + titanxBootStage, e);
+                          reportTitanxStartFailure("Startup exception: " + e.toString());
+                      }
+                  });''')
+          change(path, '        GuestProgramLauncherComponent guestProgramLauncherComponent = new GuestProgramLauncherComponent();', '''        GuestProgramLauncherComponent guestProgramLauncherComponent = new GuestProgramLauncherComponent();
+                  guestProgramLauncherComponent.setTerminationCallback(code -> {
+                      if (!titanxDesktopVisible && !isGenerateWineprefix()) {
+                          reportTitanxStartFailure("Wine/Box64 process exited before desktop. Exit code: " + code);
+                      }
+                  });''')
+
+          # Build-time source proof: no old package storage/socket paths in Java and native headers.
+          for part in ('app/src/main/cpp', 'app/src/main/java'):
+              for f in (root/part).rglob('*'):
+                  if f.suffix not in ('.java', '.h', '.c', '.cpp'): continue
+                  data = f.read_text(encoding='utf-8', errors='replace')
+                  if '/data/data/com.winlator/' in data:
+                      raise RuntimeError(f'Unfixed package path: {f}')
+          print('TitanX v4.2 source patch complete. No /data/data/com.winlator/ path remains in source.')
+          PY
+
       - name: Keep stable debug signing key
         uses: actions/cache@v4
         with:
@@ -118,7 +221,7 @@ jobs:
               grep -Fx "$file" apk-manifest.txt
           done
           mkdir -p output
-          cp "$APK" output/TitanX-S23Ultra-8GB-DriverManager.apk
+          cp "$APK" output/TitanX-S23Ultra-8GB-v4.2.apk
           cp winlator/LICENSE output/WINLATOR-LICENSE.txt
           cp winlator/TITANX_DRIVER_CREDITS.txt output/DRIVER-CREDITS.txt
           sha256sum output/*.apk > output/APK-SHA256.txt
@@ -126,7 +229,7 @@ jobs:
       - name: Publish installable APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-8G2-DriverManager-APK
+          name: TitanX-8G2-v4.2-FixedStartup-APK
           path: output/
           if-no-files-found: error
 

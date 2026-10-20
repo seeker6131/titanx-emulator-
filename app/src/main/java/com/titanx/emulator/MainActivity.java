@@ -156,7 +156,7 @@ public class MainActivity extends Activity {
             getFilesDir(), "runtime"
         );
 
-        log("TitanX v1.3 started");
+        log("TitanX v1.4 started");
         buildLayout();
         page("Dashboard");
     }
@@ -206,7 +206,7 @@ public class MainActivity extends Activity {
         nav.removeAllViews();
 
         subtitle.setText(
-            "v1.3 • " + Build.SUPPORTED_ABIS[0]
+            "v1.4 • " + Build.SUPPORTED_ABIS[0]
             + " • " + (runtime.isDirectory()
                 ? "Runtime files present"
                 : "Runtime offline")
@@ -272,6 +272,7 @@ public class MainActivity extends Activity {
         field(e, "COMPATIBILITY ANALYZER", "v1.1");
         field(e, "DEPENDENCY GRAPH", "v1.2");
         field(e, "PACKAGE VALIDATOR", "v1.3");
+        field(e, "RUNTIME READINESS", "v1.4");
         field(e, "WINE", "Not integrated");
         field(e, "FEX", "Not integrated");
         field(e, "DXVK", "Not integrated");
@@ -293,6 +294,9 @@ public class MainActivity extends Activity {
         note(c, "Files are inspected, not executed.");
 
         if (runtime.isDirectory()) {
+            button(c, "ANALYZE RUNTIME READINESS",
+                this::readinessAsync);
+
             button(c, "SCAN RUNTIME FILES",
                 this::scanAsync);
 
@@ -314,6 +318,9 @@ public class MainActivity extends Activity {
             button(c, "VERIFY PACKAGE MANIFEST",
                 this::verifyManifestAsync);
         }
+
+        button(c, "RUN READINESS SELF-TEST",
+            this::readinessTestAsync);
 
         button(c, "RUN PACKAGE SELF-TEST",
             this::validatorTestAsync);
@@ -338,28 +345,28 @@ public class MainActivity extends Activity {
                 this::removeRuntime);
         }
 
-        heading("PACKAGE VALIDATION");
+        heading("RUNTIME READINESS");
         LinearLayout info = card();
 
-        field(info, "SHA-256",
-            "Hash every imported file");
-        field(info, "INVENTORY",
-            "File paths and byte sizes");
-        field(info, "EMPTY FILES",
-            "Detect zero-byte files");
-        field(info, "CASE COLLISIONS",
-            "Detect case-insensitive path duplicates");
-        field(info, "MANIFEST",
-            "Save and verify a local baseline");
-        field(info, "FILE LIMIT",
-            "20,000 files / 1 GB");
-        field(info, "EXECUTION",
-            "Not implemented");
+        field(info, "ELF INVENTORY",
+            "Architecture and file count");
+
+        field(info, "PACKAGE FINGERPRINT",
+            "SHA-256 over file inventory");
+
+        field(info, "COMPONENT INDICATORS",
+            "Wine / FEX / Box64 / DXVK filenames");
+
+        field(info, "MANIFEST STATUS",
+            "Saved baseline presence");
+
+        field(info, "EXECUTION STATUS",
+            "Not integrated");
 
         note(info,
-            "SHA-256 detects changes against a "
-            + "saved baseline. It does not prove "
-            + "that imported software is safe.");
+            "Filename indicators are not proof "
+            + "of runtime compatibility. "
+            + "Windows execution is not available.");
     }
 
     private void asyncReport(
@@ -392,6 +399,22 @@ public class MainActivity extends Activity {
                 report(title, value);
             });
         }).start();
+    }
+
+    private void readinessAsync() {
+        asyncReport(
+            "TitanX Runtime Readiness v1.4",
+            () -> RuntimeReadiness.analyze(
+                runtime, getFilesDir()
+            )
+        );
+    }
+
+    private void readinessTestAsync() {
+        asyncReport(
+            "TitanX Readiness Self-Test v1.4",
+            RuntimeReadiness::selfTest
+        );
     }
 
     private void validateAsync() {
@@ -592,7 +615,7 @@ public class MainActivity extends Activity {
         field(c, "DXVK", "Not integrated");
 
         note(c,
-            "TitanX v1.3 validates runtime packages. "
+            "TitanX v1.4 inspects runtime readiness. "
             + "Windows game execution is not available.");
 
         button(c, "OPEN RUNTIME",

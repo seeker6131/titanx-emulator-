@@ -13,6 +13,10 @@
 
         <activity
             android:name=".RuntimeProcessActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".GlibcTestActivity"
             android:exported="true">
 
             <intent-filter>

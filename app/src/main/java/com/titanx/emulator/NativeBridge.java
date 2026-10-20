@@ -1,6 +1,8 @@
 
 package com.titanx.emulator;
 
+import java.io.File;
+
 public final class NativeBridge {
 
     private static boolean loaded = false;
@@ -20,29 +22,42 @@ public final class NativeBridge {
     private NativeBridge() {}
 
     private static native String nativeInfo();
-
     private static native int nativeSelfTest();
+    private static native String nativeInspectElf(String path);
 
     public static String report() {
         if (!loaded) {
-            return "NATIVE ENGINE: NOT LOADED\n"
-                + error;
+            return "NATIVE ENGINE: NOT LOADED\n" + error;
         }
 
         try {
-            int result = nativeSelfTest();
+            int test = nativeSelfTest();
 
             return "NATIVE ENGINE: LOADED\n"
                 + nativeInfo()
                 + "\nSelf-test: "
-                + (result == 42 ? "PASS" : "FAIL")
+                + (test == 42 ? "PASS" : "FAIL")
                 + "\nWine: NOT INTEGRATED"
                 + "\nFEX: NOT INTEGRATED"
                 + "\nDXVK: NOT INTEGRATED";
-
         } catch (Throwable e) {
-            return "NATIVE ENGINE ERROR:\n"
-                + e.toString();
+            return "NATIVE ERROR:\n" + e;
+        }
+    }
+
+    public static String inspect(File file) {
+        if (!loaded) {
+            return "Native library not loaded: " + error;
+        }
+
+        if (file == null || !file.isFile()) {
+            return "Invalid file";
+        }
+
+        try {
+            return nativeInspectElf(file.getAbsolutePath());
+        } catch (Throwable e) {
+            return "Inspection failed: " + e;
         }
     }
 }

@@ -1,3 +1,4 @@
+
 name: TitanX GTA Checker - Build APK
 
 on:
@@ -12,8 +13,9 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 35
+
     steps:
       - name: Checkout files
         uses: actions/checkout@v4
@@ -24,24 +26,44 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - name: Find SDK and install Android 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "SDK root: $SDK_ROOT"
+          SDKMGR="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMGR" ]; then
+            SDKMGR="$(find "$SDK_ROOT/cmdline-tools" -maxdepth 3 -type f -name sdkmanager -print -quit)"
+          fi
+          if [ -z "$SDKMGR" ] || [ ! -x "$SDKMGR" ]; then
+            echo 'Cannot locate the Android SDK manager'
+            exit 1
+          fi
+          echo "Using: $SDKMGR"
+          "$SDKMGR" --sdk_root="$SDK_ROOT" --install 'platforms;android-35' 'build-tools;35.0.0'
 
       - name: Set up Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
 
-      - name: Extract source
+      - name: Extract and check source
         shell: bash
         run: |
           set -euo pipefail
           test -s TitanX-GTA-Checker-v0.1-Source.zip
           unzip -q TitanX-GTA-Checker-v0.1-Source.zip -d checker-src
           test -s checker-src/titanx-gta-checker/app/src/main/java/com/titanx/gtachecker/MainActivity.java
+          test -s checker-src/titanx-gta-checker/app/build.gradle
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "sdk.dir=$SDK_ROOT" > checker-src/titanx-gta-checker/local.properties
 
-      - name: Build Android APK
-        run: gradle -p checker-src/titanx-gta-checker :app:assembleDebug --no-daemon --stacktrace
+      - name: Build TitanX GTA Checker APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          gradle -p checker-src/titanx-gta-checker :app:assembleDebug --no-daemon --stacktrace
 
       - name: Package APK
         shell: bash
@@ -56,5 +78,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: TitanX-GTA-Checker-v0.1-APK
-          path: output/
+          path: output/TitanX-GTA-Checker-v0.1.apk
           if-no-files-found: error

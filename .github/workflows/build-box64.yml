@@ -1,3 +1,4 @@
+
 name: TitanX Box64 Android Build
 
 on:
@@ -36,39 +37,33 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$ANDROID_HOME/licenses"
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --licenses > /tmp/sdk-licenses.log 2>&1 || true
-          tail -n 15 /tmp/sdk-licenses.log
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /tmp/licenses.log 2>&1 || true
+          tail -n 15 /tmp/licenses.log
 
-      - name: Install Android SDK Components
+      - name: Install Android SDK
         shell: bash
         run: |
           set -euo pipefail
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
-            --install \
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "platforms;android-35" \
             "build-tools;35.0.0" \
             "ndk;27.2.12479018" \
             "cmake;3.22.1"
 
-      - name: Install Build Dependencies
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git cmake ninja-build python3 \
-            make file binutils gcc
+          sudo apt-get install -y git cmake ninja-build \
+            make file binutils gcc python3
 
       - name: Fetch Official Box64
         shell: bash
         run: |
           set -euo pipefail
-          git clone --depth 1 \
-            https://github.com/ptitSeb/box64.git \
-            box64-source
-          git -C box64-source rev-parse HEAD \
-            > box64-commit.txt
+          git clone --depth 1 https://github.com/ptitSeb/box64.git box64-source
+          git -C box64-source rev-parse HEAD > box64-commit.txt
 
-      - name: Configure Box64 Android ARM64
+      - name: Configure Box64
         shell: bash
         run: |
           set -euo pipefail
@@ -90,29 +85,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake --build box64-build \
-            --target box64 \
-            --parallel 2
+          cmake --build box64-build --target box64 --parallel 2
           test -s box64-build/box64
 
-      - name: Verify Box64 ARM64
-        shell: bash
-        run: |
-          set -euo pipefail
-          NDK="$ANDROID_HOME/ndk/27.2.12479018"
-          TOOLS="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-
-          "$TOOLS/llvm-readelf" \
-            -h box64-build/box64 \
-            | tee box64-elf-report.txt
-
-          grep -q "AArch64" box64-elf-report.txt
-
-          "$TOOLS/llvm-readelf" \
-            -d box64-build/box64 \
-            > box64-dependencies.txt
-
-      - name: Create x86-64 Test Program
+      - name: Create X86-64 CPU Test
         shell: bash
         run: |
           set -euo pipefail
@@ -128,24 +104,21 @@ jobs:
               volatile uint64_t b = 987654321ULL;
               uint64_t result = a + b;
 
-              printf("TITANX X86_64 TEST\n");
+              puts("TITANX X86_64 TEST");
               printf("RESULT: %llu\n",
                      (unsigned long long)result);
 
               if (result == 1111111110ULL) {
-                  printf("CPU TEST PASS\n");
+                  puts("CPU TEST PASS");
                   return 0;
               }
 
-              printf("CPU TEST FAILED\n");
+              puts("CPU TEST FAILED");
               return 1;
           }
           EOF
 
-          gcc \
-            -static \
-            -O2 \
-            -no-pie \
+          gcc -static -O2 -no-pie \
             -o test-program/titanx_x64_test \
             test-program/test.c
 
@@ -157,25 +130,42 @@ jobs:
           grep -q "Advanced Micro Devices X86-64" \
             x64-test-elf-report.txt
 
-      - name: Package Box64 and Test Program
+          readelf -l test-program/titanx_x64_test \
+            | tee x64-test-program-headers.txt
+
+      - name: Package Native Binaries
         shell: bash
         run: |
           set -euo pipefail
 
-          mkdir -p app/src/main/jniLibs/arm64-v8a
-          mkdir -p app/src/main/assets/runtime
+          DEST="app/src/main/jniLibs/arm64-v8a"
+          mkdir -p "$DEST"
 
-          cp box64-build/box64 \
-            app/src/main/jniLibs/arm64-v8a/libbox64.so
+          cp box64-build/box64 "$DEST/libbox64.so"
 
           cp test-program/titanx_x64_test \
-            app/src/main/assets/runtime/titanx_x64_test
+            "$DEST/libtitanxtest.so"
 
-          test -s \
-            app/src/main/jniLibs/arm64-v8a/libbox64.so
+          chmod 755 "$DEST/libbox64.so"
+          chmod 755 "$DEST/libtitanxtest.so"
 
-          test -s \
-            app/src/main/assets/runtime/titanx_x64_test
+          test -s "$DEST/libbox64.so"
+          test -s "$DEST/libtitanxtest.so"
+
+          file "$DEST/libbox64.so"
+          file "$DEST/libtitanxtest.so"
+
+          NDK="$ANDROID_HOME/ndk/27.2.12479018"
+          TOOLS="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+
+          "$TOOLS/llvm-readelf" -h \
+            "$DEST/libbox64.so" \
+            | tee box64-elf-report.txt
+
+          grep -q AArch64 box64-elf-report.txt
+
+          readelf -h "$DEST/libtitanxtest.so" \
+            | grep -q "Advanced Micro Devices X86-64"
 
       - name: Build TitanX APK
         shell: bash
@@ -189,23 +179,34 @@ jobs:
           set -euo pipefail
 
           APK="app/build/outputs/apk/debug/app-debug.apk"
-
           test -s "$APK"
 
           unzip -l "$APK" | tee apk-contents.txt
 
-          grep -q \
-            "lib/arm64-v8a/libbox64.so" \
+          grep -q "lib/arm64-v8a/libbox64.so" \
             apk-contents.txt
 
-          grep -q \
-            "assets/runtime/titanx_x64_test" \
+          grep -q "lib/arm64-v8a/libtitanxtest.so" \
             apk-contents.txt
+
+          mkdir -p apk-check
+
+          unzip -p "$APK" \
+            lib/arm64-v8a/libtitanxtest.so \
+            > apk-check/libtitanxtest.so
+
+          readelf -h apk-check/libtitanxtest.so \
+            | tee packaged-test-elf.txt
+
+          grep -q "Advanced Micro Devices X86-64" \
+            packaged-test-elf.txt
+
+          echo "X86-64 test binary preserved in APK."
 
       - name: Upload TitanX APK
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-v2.5-X64-Test-APK
+          name: TitanX-v2.5.2-APK
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
@@ -213,11 +214,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: TitanX-v2.5-Diagnostics
+          name: TitanX-v2.5.2-Diagnostics
           path: |
             box64-commit.txt
             box64-elf-report.txt
-            box64-dependencies.txt
             x64-test-elf-report.txt
+            x64-test-program-headers.txt
+            packaged-test-elf.txt
             apk-contents.txt
           if-no-files-found: ignore
